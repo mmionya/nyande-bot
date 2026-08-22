@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.nyande-allowed-links.json
+.nyande-link-moderation.json
+.nyande-llm-history.json
+
+__pycache__/
+*.py[cod]
+
+node_modules/
+dist/

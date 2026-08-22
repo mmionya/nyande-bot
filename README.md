@@ -1,0 +1,208 @@
+# nyande-bot — Go edition
+
+**English** | [Русский](README.ru.md)
+
+`nyande-bot` is a Telegram and Discord media downloader with an optional
+Telegram LLM assistant. This Go edition incorporates useful additions from the
+original Python and Rust versions.
+
+## Features
+
+- downloads photos, videos, and carousels from TikTok, Instagram, X/Twitter,
+  Xiaohongshu (RedNote), Pinterest, YouTube, and Reddit;
+- includes the source post caption or description for every supported platform;
+- supports direct image and video links;
+- sends carousels as Telegram albums or Discord attachment batches of up to 10
+  files and validates file-size limits;
+- works with OpenRouter and other OpenAI-compatible APIs;
+- sends photos, selected video frames, and audio/video transcripts to the LLM;
+- restores the entire cached album when a user replies to one of the files
+  previously sent by the bot;
+- provides the LLM with `current_time` and optional `web_search` tools;
+- optionally deletes unsupported links posted by non-administrators in groups;
+- stores extra allowed domains added through `/allowlink example.com`;
+- persists each group's link-deletion setting across restarts;
+- accepts Telegram Stars and can display an optional Ko-fi button;
+- keeps process statistics and separate LLM history for every chat.
+
+## Chat games
+
+The `/ttt` and `/checkers` commands also run games directly through Telegram
+inline keyboards. Reply to another user's message with the command to challenge
+that user.
+
+`/wordle` starts a five-letter English Wordle directly in chat. Everyone gets
+the same daily word, while attempts are tracked per user.
+The bot sends a PNG progress card after every guess and adds the player's avatar
+to the final card.
+
+## Technology
+
+- Go 1.24 — Telegram and Discord bots, downloaders, and LLM client;
+- `yt-dlp`, Deno, FFmpeg, and FFprobe — YouTube challenge solving, media
+  processing, and downloader fallbacks;
+- optional OpenAI Whisper CLI — local audio and video transcription;
+- Docker Compose — service orchestration.
+
+## Quick start
+
+You need Podman or Docker with a Compose provider, plus a Telegram bot from
+[@BotFather](https://t.me/BotFather), a Discord application, or both.
+
+1. Copy the configuration template:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Set at least one bot token in `.env`. Both transports can run at once:
+
+   ```dotenv
+   BOT_TOKEN=123456789:telegram_bot_token
+   DISCORD_BOT_TOKEN=your_discord_bot_token
+   ```
+
+3. Build and start every service:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   The equivalent Podman command is:
+
+   ```bash
+   podman compose up -d --build
+   ```
+
+4. Check service status and logs:
+
+   ```bash
+   docker compose ps
+   docker compose logs -f bot
+   ```
+
+   Replace `docker compose` with `podman compose` in these commands when using
+   Podman.
+
+The default `runtime` image includes local Whisper. If transcription is not
+needed, use the smaller image:
+
+```dotenv
+DOCKER_TARGET=runtime-lite
+WHISPER_ENABLED=false
+```
+
+## Discord setup
+
+Create an application and bot in the
+[Discord Developer Portal](https://discord.com/developers/applications), copy
+its token to `DISCORD_BOT_TOKEN`, and enable **Message Content Intent** on the
+Bot page.
+Invite it to a server with permission to view channels, send messages, attach
+files, and read message history. The bot processes the first supported media
+link in each message and replies with the downloaded files.
+
+Discord commands use `!` by default: `!help`, `!ping`, and `!stats`. Change the
+prefix with `DISCORD_COMMAND_PREFIX`. The LLM, moderation, payments, and chat
+games currently remain Telegram-only.
+
+## LLM and media analysis
+
+Example OpenRouter configuration:
+
+```dotenv
+LLM_ENABLED=true
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_API_KEY=your_api_key
+LLM_MODEL=perplexity/sonar-pro
+LLM_TRIGGER_WORDS=meow,nyande
+LLM_WEB_SEARCH_ENABLED=false
+LLM_VISION_ENABLED=true
+LLM_TIMEZONE=Asia/Almaty
+LLM_VIDEO_FRAME_COUNT=3
+WHISPER_ENABLED=true
+```
+
+Perplexity is available through the same OpenRouter key: set the model to
+`perplexity/sonar-pro`. It has native search, so `LLM_WEB_SEARCH_ENABLED=false`
+is sufficient for that model. For other OpenRouter models, setting it to `true`
+enables OpenRouter's server-side web search with the Perplexity engine. Search
+results inform the answer, but the bot does not append a separate source list.
+
+Per-chat history is persisted in `LLM_HISTORY_FILE` across container restarts;
+`/reset` removes it from memory and disk. Long answers are split across multiple
+Telegram messages instead of being truncated.
+
+Long-term memory is stored separately in the SQLite database at
+`LLM_MEMORY_FILE`. Records are scoped to both the Telegram chat and user, so
+participants in a group do not share profiles. The model receives up to
+`LLM_MEMORY_RECALL_LIMIT` relevant or recent records and can save or remove one
+only through explicit memory tools. Obvious passwords, API keys, and tokens are
+rejected. Set `LLM_MEMORY_ENABLED=false` to disable the feature.
+
+In private chats, the bot responds to ordinary text and media messages. In a
+group, it can be invoked by mentioning its `@username`, replying to one of its
+messages, or using one of the comma-separated `LLM_TRIGGER_WORDS` (matched
+case-insensitively). Replies to media downloaded and sent by the bot are handled
+only when they contain one of those trigger words.
+
+`LLM_VIDEO_FRAME_COUNT` controls how many evenly spaced video frames are sent
+to the model and accepts values from 1 to 6. `LLM_TIMEZONE` accepts an IANA
+timezone such as `Asia/Almaty` or a UTC offset such as `+05:00`.
+
+See [`.env.example`](.env.example) for every available setting. The `.env` file
+is ignored by Git; never publish bot tokens or API keys.
+
+Group administrators can use `/linkdelete on` or `/linkdelete off` to control
+whether unsupported links are deleted. The setting is stored in
+`LINK_MODERATION_FILE` and is enabled by default.
+
+## Bot commands
+
+| Command | Description |
+|---|---|
+| `/start` | start the bot |
+| `/help` | show help |
+| `/ttt` | play tic-tac-toe in Telegram messages |
+| `/checkers` | play checkers in Telegram messages |
+| `/wordle` | play a five-letter English Wordle in Telegram messages |
+| `/donate` | support the bot through Telegram Stars or Ko-fi |
+| `/paysupport` | show payment support information |
+| `/ping` | check whether the bot is available |
+| `/stats` | show statistics for the current process |
+| `/reset` | clear LLM history for the current chat |
+| `/remember fact` | save a long-term memory for the current user and chat |
+| `/memory` | list long-term memories and their ids |
+| `/forget id` | delete one long-term memory by id |
+| `/forget_all` | delete all long-term memories for the current user and chat |
+| `/allowlink example.com` | allow a domain in a private chat or as an administrator |
+| `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
+
+Discord provides `!help`, `!ping`, and `!stats` (or the prefix configured in
+`DISCORD_COMMAND_PREFIX`). Media links do not need a command.
+
+## Local validation
+
+```bash
+gofmt -w cmd internal resources
+go test ./...
+go vet ./...
+```
+
+The bot requires `yt-dlp` with its EJS component, Deno, `ffmpeg`, and `ffprobe`
+at runtime. The Docker image includes all of them. Local transcription
+additionally requires the `whisper` CLI.
+
+## Repository structure
+
+```text
+cmd/nyande-bot/     application entry point
+internal/bot/         commands, games, moderation, media, and state
+internal/telegram/    Telegram Bot API client
+internal/discordbot/  Discord gateway, commands, and media replies
+internal/downloader/  platform downloaders and yt-dlp fallback
+internal/llm/         OpenAI-compatible client and tools
+resources/            shared strings.json
+```
+
+Only download and share content that you own or have permission to use.
