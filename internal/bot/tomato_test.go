@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hyphentae/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/internal/telegram"
 )
 
 func TestRenderTelegramTomatoGIF(t *testing.T) {

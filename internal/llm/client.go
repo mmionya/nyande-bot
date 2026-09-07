@@ -17,8 +17,8 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const maxAgentSteps = 3
@@ -315,7 +315,7 @@ func (c *Client) complete(ctx context.Context, messages []chatMessage, tools []m
 	}
 	request.Header.Set("Authorization", "Bearer "+c.cfg.LLMAPIKey)
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("HTTP-Referer", "https://github.com/hyphentae/nyande-bot")
+	request.Header.Set("HTTP-Referer", "https://github.com/mmionya/nyande-bot")
 	request.Header.Set("X-Title", "nyande-bot")
 	response, err := c.http.Do(request)
 	if err != nil {

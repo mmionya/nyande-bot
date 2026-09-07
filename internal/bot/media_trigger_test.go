@@ -3,8 +3,8 @@ package bot
 import (
 	"testing"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/telegram"
 )
 
 func TestGroupLLMRequiresTriggerOnlyForDownloadedMediaReply(t *testing.T) {

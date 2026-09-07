@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/config"
 )
 
 type Media struct {

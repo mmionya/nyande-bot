@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/hyphentae/nyande-bot/internal/llm"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/internal/llm"
+	"github.com/mmionya/nyande-bot/internal/telegram"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"

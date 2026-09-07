@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	"github.com/hyphentae/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/internal/telegram"
 )
 
 const telegramMessageLimit = 4096

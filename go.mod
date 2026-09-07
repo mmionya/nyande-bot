@@ -1,4 +1,4 @@
-module github.com/hyphentae/nyande-bot
+module github.com/mmionya/nyande-bot
 
 go 1.24.0
 

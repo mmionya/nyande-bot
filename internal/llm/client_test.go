@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/config"
 )
 
 func TestTextToolCallParsingAndCleanup(t *testing.T) {

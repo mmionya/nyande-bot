@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hyphentae/nyande-bot/internal/llm"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/internal/llm"
+	"github.com/mmionya/nyande-bot/internal/telegram"
 )
 
 type State struct {

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hyphentae/nyande-bot/internal/telegram"
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const (

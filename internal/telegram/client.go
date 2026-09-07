@@ -271,13 +271,25 @@ func (c *Client) DownloadFile(ctx context.Context, fileID string, maxBytes int64
 
 func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, replyTo int) (Message, error) {
 	field := upload.Kind
-	if field != "photo" && field != "video" && field != "animation" && field != "document" {
+	var method string
+	switch field {
+	case "photo":
+		method = "sendPhoto"
+	case "video":
+		method = "sendVideo"
+	case "animation":
+		method = "sendAnimation"
+	case "video_note":
+		method = "sendVideoNote"
+	case "voice":
+		method = "sendVoice"
+	default:
 		field = "document"
+		method = "sendDocument"
 	}
-	method := "send" + strings.ToUpper(field[:1]) + field[1:]
 	if len(upload.Data) == 0 {
 		payload := map[string]any{"chat_id": chatID, field: upload.URL}
-		if upload.Caption != "" {
+		if upload.Caption != "" && field != "video_note" {
 			payload["caption"] = upload.Caption
 		}
 		if field == "video" {
@@ -294,7 +306,7 @@ func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, re
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	_ = writer.WriteField("chat_id", strconv.FormatInt(chatID, 10))
-	if upload.Caption != "" {
+	if upload.Caption != "" && field != "video_note" {
 		_ = writer.WriteField("caption", upload.Caption)
 	}
 	if field == "video" {
@@ -320,6 +332,25 @@ func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, re
 	var result Message
 	err = c.do(ctx, method, writer.FormDataContentType(), body.Bytes(), &result)
 	return result, err
+}
+
+func (c *Client) SendVideoNote(ctx context.Context, chatID int64, data []byte, replyTo int) (Message, error) {
+	return c.SendUpload(ctx, chatID, Upload{
+		Kind: "video_note",
+		Name: "video_note.mp4",
+		MIME: "video/mp4",
+		Data: data,
+	}, replyTo)
+}
+
+func (c *Client) SendVoice(ctx context.Context, chatID int64, data []byte, caption string, replyTo int) (Message, error) {
+	return c.SendUpload(ctx, chatID, Upload{
+		Kind:    "voice",
+		Name:    "voice.ogg",
+		MIME:    "audio/ogg",
+		Caption: caption,
+		Data:    data,
+	}, replyTo)
 }
 
 // SendAnimation sends an animation by URL through Telegram's native

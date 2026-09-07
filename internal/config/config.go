@@ -54,6 +54,10 @@ type Config struct {
 	WhisperPath         string
 	WhisperModel        string
 	WhisperLanguage     string
+	ChatLogEnabled      bool
+	ChatLogFile         string
+	ChatLogMaxPerChat   int
+	ReminderDBFile      string
 }
 
 func Load() (Config, error) {
@@ -101,6 +105,10 @@ func Load() (Config, error) {
 		WhisperPath:         envString("WHISPER_PATH", "whisper"),
 		WhisperModel:        envString("WHISPER_MODEL_SIZE", "base"),
 		WhisperLanguage:     envString("WHISPER_LANGUAGE", "auto"),
+		ChatLogEnabled:      envBool("CHAT_LOG_ENABLED", true),
+		ChatLogFile:         envString("CHAT_LOG_FILE", ".nyande-chatlog.db"),
+		ChatLogMaxPerChat:   envInt("CHAT_LOG_MAX_PER_CHAT", 50000, 100, 1000000),
+		ReminderDBFile:      envString("REMINDER_DB_FILE", ".nyande-reminders.db"),
 	}
 	if cfg.BotToken == "" && cfg.DiscordToken == "" {
 		return Config{}, errors.New("BOT_TOKEN or DISCORD_BOT_TOKEN is required")
@@ -244,5 +252,5 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 }
 
 func (c Config) String() string {
-	return fmt.Sprintf("telegram=%t discord=%t llm=%t model=%q memory=%t web_search=%t vision=%t whisper=%t", c.BotToken != "", c.DiscordToken != "", c.LLMEnabled, c.LLMModel, c.LLMMemoryEnabled, c.LLMWebSearch, c.LLMVision, c.WhisperEnabled)
+	return fmt.Sprintf("telegram=%t discord=%t llm=%t model=%q memory=%t chatlog=%t web_search=%t vision=%t whisper=%t", c.BotToken != "", c.DiscordToken != "", c.LLMEnabled, c.LLMModel, c.LLMMemoryEnabled, c.ChatLogEnabled, c.LLMWebSearch, c.LLMVision, c.WhisperEnabled)
 }

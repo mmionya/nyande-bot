@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/hyphentae/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/config"
 )
 
 func TestNewConfiguresRequiredGatewayIntents(t *testing.T) {

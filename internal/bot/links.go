@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/hyphentae/nyande-bot/internal/downloader"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/internal/downloader"
+	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 var urlPattern = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"']+`)
@@ -187,7 +187,7 @@ func (b *Bot) isAdmin(ctx context.Context, message *telegram.Message) (bool, err
 }
 
 func (b *Bot) linkDeletionEnabled(chatID int64) bool {
-	return b.linkConfig == nil || b.linkConfig.Enabled(chatID)
+	return b.linkConfig != nil && b.linkConfig.Enabled(chatID)
 }
 
 func (b *Bot) configureLinkDeletion(ctx context.Context, message *telegram.Message, argument string) error {

@@ -14,6 +14,7 @@ services:
       LINK_MODERATION_FILE: /app/data/link-moderation.json
       LLM_HISTORY_FILE: /app/data/llm-history.json
       LLM_MEMORY_FILE: /app/data/llm-memory.db
+      CHAT_LOG_FILE: /app/data/chatlog.db
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

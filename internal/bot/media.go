@@ -15,10 +15,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/hyphentae/nyande-bot/internal/downloader"
-	"github.com/hyphentae/nyande-bot/internal/llm"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/internal/downloader"
+	"github.com/mmionya/nyande-bot/internal/llm"
+	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (b *Bot) handleMediaURL(ctx context.Context, message *telegram.Message, mediaURL string) error {
@@ -205,6 +205,16 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	if text == "" && len(images) == 0 && len(transcripts) == 0 {
 		return nil
 	}
+	var mediaSpecs []string
+	for _, att := range attachments {
+		if spec, err := inspectMedia(ctx, att); err == nil && spec != "" {
+			mediaSpecs = append(mediaSpecs, spec)
+		}
+	}
+	if len(mediaSpecs) > 0 {
+		text += "\n\n[Технические характеристики прикреплённого медиа:\n" + strings.Join(mediaSpecs, "\n\n") + "]"
+	}
+
 	b.state.LLMCalls.Add(1)
 	userName := ""
 	if message.From != nil {
@@ -212,6 +222,8 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	}
 	tools := []llm.Tool{b.tomatoTool(message)}
 	tools = append(tools, b.memoryTools(message)...)
+	tools = append(tools, b.chatlogTools(message)...)
+	tools = append(tools, b.reminderTools(message)...)
 	answer, err := b.llm.Ask(ctx, llm.Request{
 		ChatID: message.Chat.ID, UserName: userName, Text: text,
 		Images: images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,

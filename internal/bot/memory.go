@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hyphentae/nyande-bot/internal/llm"
-	longmemory "github.com/hyphentae/nyande-bot/internal/memory"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/internal/llm"
+	longmemory "github.com/mmionya/nyande-bot/internal/memory"
+	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (b *Bot) rememberCommand(ctx context.Context, message *telegram.Message, content string) error {

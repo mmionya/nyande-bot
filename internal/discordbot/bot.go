@@ -15,8 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/hyphentae/nyande-bot/internal/config"
-	"github.com/hyphentae/nyande-bot/internal/downloader"
+	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/downloader"
 )
 
 const (

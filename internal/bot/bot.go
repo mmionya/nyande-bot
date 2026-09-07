@@ -12,12 +12,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
-	"github.com/hyphentae/nyande-bot/internal/downloader"
-	"github.com/hyphentae/nyande-bot/internal/llm"
-	"github.com/hyphentae/nyande-bot/internal/memory"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/internal/chatlog"
+	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/downloader"
+	"github.com/mmionya/nyande-bot/internal/llm"
+	"github.com/mmionya/nyande-bot/internal/memory"
+	"github.com/mmionya/nyande-bot/internal/reminders"
+	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type adminKey struct {
@@ -36,6 +38,8 @@ type Bot struct {
 	linkConfig *linkDeletionSettings
 	identity   telegram.User
 	media      *mediaCache
+	chatlog    *chatlog.Store
+	reminders  *reminders.Store
 
 	adminMu         sync.Mutex
 	adminCache      map[adminKey]adminEntry
@@ -65,9 +69,29 @@ func New(cfg config.Config) (*Bot, error) {
 			return nil, fmt.Errorf("open long-term memory: %w", err)
 		}
 	}
+	var chatlogStore *chatlog.Store
+	if cfg.ChatLogEnabled {
+		chatlogStore, err = chatlog.Open(cfg.ChatLogFile, cfg.ChatLogMaxPerChat)
+		if err != nil {
+			if memories != nil {
+				_ = memories.Close()
+			}
+			return nil, fmt.Errorf("open chat log database: %w", err)
+		}
+	}
+	remindersStore, err := reminders.Open(cfg.ReminderDBFile)
+	if err != nil {
+		if memories != nil {
+			_ = memories.Close()
+		}
+		if chatlogStore != nil {
+			_ = chatlogStore.Close()
+		}
+		return nil, fmt.Errorf("open reminders database: %w", err)
+	}
 	return &Bot{
 		cfg: cfg, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
-		llm: llm.New(cfg), memories: memories, state: NewState(), allowlist: allowed, linkConfig: linkConfig, media: newMediaCache(512),
+		llm: llm.New(cfg), memories: memories, chatlog: chatlogStore, reminders: remindersStore, state: NewState(), allowlist: allowed, linkConfig: linkConfig, media: newMediaCache(512),
 		adminCache: make(map[adminKey]adminEntry),
 		tttGames:   make(map[int64]*ticTacToeGame), tttPending: make(map[int64][2]int64),
 		checkers: make(map[int64]*checkersGame), checkersPending: make(map[int64][2]int64),
@@ -76,7 +100,23 @@ func New(cfg config.Config) (*Bot, error) {
 }
 
 func (b *Bot) Close() error {
-	return b.memories.Close()
+	var errs []error
+	if b.memories != nil {
+		if err := b.memories.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if b.chatlog != nil {
+		if err := b.chatlog.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if b.reminders != nil {
+		if err := b.reminders.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (b *Bot) Run(ctx context.Context) error {
@@ -86,6 +126,7 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 	b.identity = identity
 	log.Printf("[bot] started as @%s (%d), %s", identity.Username, identity.ID, b.cfg.String())
+	go b.reminderLoop(ctx)
 	commands := []map[string]string{
 		{"command": "help", "description": "возможности бота"},
 		{"command": "linkdelete", "description": "удаление неподдерживаемых ссылок"},
@@ -100,6 +141,10 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "forget", "description": "забыть один факт"},
 		{"command": "forget_all", "description": "очистить долговременную память"},
 		{"command": "ping", "description": "проверить бота"},
+		{"command": "round", "description": "конвертировать видео в кружочек"},
+		{"command": "voice", "description": "конвертировать в голосовое сообщение"},
+		{"command": "gif", "description": "конвертировать видео в гифку"},
+		{"command": "mediainfo", "description": "информация о фото/видео/аудио"},
 	}
 	if err := b.telegram.SetCommands(ctx, commands); err != nil {
 		log.Printf("[bot] could not set commands: %v", err)
@@ -137,6 +182,9 @@ func (b *Bot) Run(ctx context.Context) error {
 }
 
 func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
+	if update.EditedMessage != nil {
+		b.saveChatMessage(ctx, update.EditedMessage)
+	}
 	switch {
 	case update.CallbackQuery != nil:
 		return b.handleCallback(ctx, update.CallbackQuery)
@@ -150,6 +198,7 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 }
 
 func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) error {
+	b.saveChatMessage(ctx, message)
 	b.state.MessagesTotal.Add(1)
 	b.state.TrackChat(message.Chat.ID)
 
@@ -209,6 +258,14 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) erro
 			return b.startCheckers(ctx, message)
 		case "wordle":
 			return b.startWordle(ctx, message)
+		case "round":
+			return b.roundCommand(ctx, message)
+		case "voice":
+			return b.voiceCommand(ctx, message)
+		case "gif":
+			return b.gifCommand(ctx, message)
+		case "mediainfo":
+			return b.mediainfoCommand(ctx, message)
 		default:
 			return nil
 		}
@@ -392,6 +449,72 @@ func userID(message *telegram.Message) int64 {
 		return 0
 	}
 	return message.From.ID
+}
+
+func (b *Bot) saveChatMessage(ctx context.Context, message *telegram.Message) {
+	if b.chatlog == nil || message == nil {
+		return
+	}
+	text := strings.TrimSpace(message.ContentText())
+	if text == "" {
+		return
+	}
+	var currentUserID int64
+	var username, displayName string
+	if message.From != nil {
+		currentUserID = message.From.ID
+		username = message.From.Username
+		displayName = message.From.DisplayName()
+	}
+	date := time.Now().UTC()
+	if message.Date > 0 {
+		date = time.Unix(message.Date, 0).UTC()
+	}
+	if err := b.chatlog.Save(ctx, chatlog.Message{
+		ChatID:      message.Chat.ID,
+		MessageID:   message.MessageID,
+		UserID:      currentUserID,
+		Username:    username,
+		DisplayName: displayName,
+		Text:        text,
+		Date:        date,
+	}); err != nil {
+		log.Printf("[chatlog] save chat=%d msg=%d failed: %v", message.Chat.ID, message.MessageID, err)
+	}
+}
+
+func (b *Bot) reminderLoop(ctx context.Context) {
+	if b.reminders == nil {
+		return
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			due, err := b.reminders.GetDue(ctx, now)
+			if err != nil {
+				log.Printf("[reminders] get due failed: %v", err)
+				continue
+			}
+			for _, r := range due {
+				userTag := r.UserName
+				if userTag == "" {
+					userTag = "друг"
+				}
+				text := fmt.Sprintf("⏰ **Напоминание для %s**:\n%s", userTag, r.Text)
+				_, sendErr := b.telegram.SendMessage(ctx, r.ChatID, text, r.MessageID, nil)
+				if sendErr != nil {
+					log.Printf("[reminders] send reminder %d failed: %v", r.ID, sendErr)
+				}
+				if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
+					log.Printf("[reminders] mark completed %d failed: %v", r.ID, err)
+				}
+			}
+		}
+	}
 }
 
 func containsInt(values []int, target int) bool {

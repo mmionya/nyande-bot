@@ -9,13 +9,13 @@ import (
 )
 
 type linkDeletionSettings struct {
-	mu            sync.RWMutex
-	path          string
-	disabledChats map[int64]struct{}
+	mu           sync.RWMutex
+	path         string
+	enabledChats map[int64]struct{}
 }
 
 func loadLinkDeletionSettings(path string) (*linkDeletionSettings, error) {
-	settings := &linkDeletionSettings{path: path, disabledChats: make(map[int64]struct{})}
+	settings := &linkDeletionSettings{path: path, enabledChats: make(map[int64]struct{})}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -24,13 +24,13 @@ func loadLinkDeletionSettings(path string) (*linkDeletionSettings, error) {
 		return nil, err
 	}
 	var stored struct {
-		DisabledChats []int64 `json:"disabled_chats"`
+		EnabledChats []int64 `json:"enabled_chats"`
 	}
 	if err := json.Unmarshal(data, &stored); err != nil {
 		return nil, err
 	}
-	for _, chatID := range stored.DisabledChats {
-		settings.disabledChats[chatID] = struct{}{}
+	for _, chatID := range stored.EnabledChats {
+		settings.enabledChats[chatID] = struct{}{}
 	}
 	return settings, nil
 }
@@ -38,25 +38,25 @@ func loadLinkDeletionSettings(path string) (*linkDeletionSettings, error) {
 func (s *linkDeletionSettings) Enabled(chatID int64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, disabled := s.disabledChats[chatID]
-	return !disabled
+	_, enabled := s.enabledChats[chatID]
+	return enabled
 }
 
 func (s *linkDeletionSettings) Set(chatID int64, enabled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, wasDisabled := s.disabledChats[chatID]
+	_, wasEnabled := s.enabledChats[chatID]
 	if enabled {
-		delete(s.disabledChats, chatID)
+		s.enabledChats[chatID] = struct{}{}
 	} else {
-		s.disabledChats[chatID] = struct{}{}
+		delete(s.enabledChats, chatID)
 	}
 	if err := s.saveLocked(); err != nil {
-		if wasDisabled {
-			s.disabledChats[chatID] = struct{}{}
+		if wasEnabled {
+			s.enabledChats[chatID] = struct{}{}
 		} else {
-			delete(s.disabledChats, chatID)
+			delete(s.enabledChats, chatID)
 		}
 		return err
 	}
@@ -64,13 +64,13 @@ func (s *linkDeletionSettings) Set(chatID int64, enabled bool) error {
 }
 
 func (s *linkDeletionSettings) saveLocked() error {
-	chatIDs := make([]int64, 0, len(s.disabledChats))
-	for chatID := range s.disabledChats {
+	chatIDs := make([]int64, 0, len(s.enabledChats))
+	for chatID := range s.enabledChats {
 		chatIDs = append(chatIDs, chatID)
 	}
 	sort.Slice(chatIDs, func(left, right int) bool { return chatIDs[left] < chatIDs[right] })
 	data, err := json.MarshalIndent(struct {
-		DisabledChats []int64 `json:"disabled_chats"`
+		EnabledChats []int64 `json:"enabled_chats"`
 	}{chatIDs}, "", "  ")
 	if err != nil {
 		return err

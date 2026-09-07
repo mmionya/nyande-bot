@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hyphentae/nyande-bot/resources"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type searchResult struct {

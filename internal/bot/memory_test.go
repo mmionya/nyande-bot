@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
-	longmemory "github.com/hyphentae/nyande-bot/internal/memory"
-	"github.com/hyphentae/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/internal/config"
+	longmemory "github.com/mmionya/nyande-bot/internal/memory"
+	"github.com/mmionya/nyande-bot/internal/telegram"
 )
 
 func TestMemoryToolsRememberRecallAndForget(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hyphentae/nyande-bot/internal/bot"
-	"github.com/hyphentae/nyande-bot/internal/config"
-	"github.com/hyphentae/nyande-bot/internal/discordbot"
+	"github.com/mmionya/nyande-bot/internal/bot"
+	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/discordbot"
 )
 
 func main() {

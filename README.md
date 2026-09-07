@@ -140,6 +140,7 @@ participants in a group do not share profiles. The model receives up to
 only through explicit memory tools. Obvious passwords, API keys, and tokens are
 rejected. Set `LLM_MEMORY_ENABLED=false` to disable the feature.
 
+
 In private chats, the bot responds to ordinary text and media messages. In a
 group, it can be invoked by mentioning its `@username`, replying to one of its
 messages, or using one of the comma-separated `LLM_TRIGGER_WORDS` (matched
@@ -150,12 +151,18 @@ only when they contain one of those trigger words.
 to the model and accepts values from 1 to 6. `LLM_TIMEZONE` accepts an IANA
 timezone such as `Asia/Almaty` or a UTC offset such as `+05:00`.
 
+Chat messages are recorded in an SQLite database with FTS5 search at `CHAT_LOG_FILE`.
+The LLM can access historical messages via the `search_chat_messages` tool and inspect
+recent chat context via `get_recent_messages`. To enable the bot to receive all group
+messages (even when unaddressed), disable Privacy Mode in `@BotFather` (`/setprivacy -> Disable`)
+or make the bot an administrator in the group. Set `CHAT_LOG_ENABLED=false` to disable chat logging.
+
 See [`.env.example`](.env.example) for every available setting. The `.env` file
 is ignored by Git; never publish bot tokens or API keys.
 
 Group administrators can use `/linkdelete on` or `/linkdelete off` to control
 whether unsupported links are deleted. The setting is stored in
-`LINK_MODERATION_FILE` and is enabled by default.
+`LINK_MODERATION_FILE` and is disabled by default.
 
 ## Bot commands
 
@@ -175,6 +182,10 @@ whether unsupported links are deleted. The setting is stored in
 | `/memory` | list long-term memories and their ids |
 | `/forget id` | delete one long-term memory by id |
 | `/forget_all` | delete all long-term memories for the current user and chat |
+| `/round` | convert video into a square Telegram Video Note |
+| `/voice` | convert audio or video into a Telegram Voice message |
+| `/gif` | convert video into a looping Telegram GIF animation |
+| `/mediainfo` | show technical specs (resolution, FPS, duration, codecs) of photo/video/audio |
 | `/allowlink example.com` | allow a domain in a private chat or as an administrator |
 | `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
 

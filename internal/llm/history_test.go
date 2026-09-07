@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hyphentae/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/config"
 )
 
 func TestHistorySurvivesClientRestartAndReset(t *testing.T) {
