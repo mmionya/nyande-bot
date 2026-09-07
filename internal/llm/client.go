@@ -83,9 +83,11 @@ type completionResponse struct {
 	Choices []struct {
 		FinishReason string `json:"finish_reason"`
 		Message      struct {
-			Role      string     `json:"role"`
-			Content   string     `json:"content"`
-			ToolCalls []toolCall `json:"tool_calls"`
+			Role             string     `json:"role"`
+			Content          string     `json:"content"`
+			ReasoningContent string     `json:"reasoning_content,omitempty"`
+			Reasoning        string     `json:"reasoning,omitempty"`
+			ToolCalls        []toolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
@@ -234,6 +236,17 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 		if len(calls) == 0 {
 			answer := formatAnswer(choice.Message.Content)
 			if answer == "" {
+				reasoning := strings.TrimSpace(firstString(choice.Message.ReasoningContent, choice.Message.Reasoning))
+				if reasoning != "" {
+					answer = formatAnswer(reasoning)
+				}
+			}
+			if answer == "" {
+				log.Printf("[llm] empty answer: chat=%d finish_reason=%s content_len=%d reasoning_len=%d",
+					request.ChatID, choice.FinishReason, len(choice.Message.Content), len(choice.Message.ReasoningContent))
+				if choice.FinishReason == "length" {
+					return "", fmt.Errorf("лимит токенов исчерпан (finish_reason=length, max_tokens=%d). Увеличьте LLM_MAX_TOKENS в .env", c.cfg.LLMMaxTokens)
+				}
 				return "", errors.New("LLM returned an empty answer")
 			}
 			c.saveHistory(request.ChatID, userText, answer)
@@ -290,6 +303,15 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	}
 	answer := formatAnswer(response.Choices[0].Message.Content)
 	if answer == "" {
+		reasoning := strings.TrimSpace(firstString(response.Choices[0].Message.ReasoningContent, response.Choices[0].Message.Reasoning))
+		if reasoning != "" {
+			answer = formatAnswer(reasoning)
+		}
+	}
+	if answer == "" {
+		if response.Choices[0].FinishReason == "length" {
+			return "", fmt.Errorf("лимит токенов исчерпан (finish_reason=length, max_tokens=%d). Увеличьте LLM_MAX_TOKENS в .env", c.cfg.LLMMaxTokens)
+		}
 		return "", errors.New("LLM returned an empty final answer")
 	}
 	c.saveHistory(request.ChatID, userText, answer)
@@ -300,6 +322,11 @@ func (c *Client) complete(ctx context.Context, messages []chatMessage, tools []m
 	payload := map[string]any{
 		"model": c.cfg.LLMModel, "messages": messages,
 		"temperature": c.cfg.LLMTemperature, "max_tokens": c.cfg.LLMMaxTokens,
+	}
+	if strings.Contains(c.cfg.LLMBaseURL, "openrouter") && c.cfg.LLMMaxTokens >= 1024 {
+		payload["reasoning"] = map[string]any{
+			"max_tokens": c.cfg.LLMMaxTokens / 2,
+		}
 	}
 	if allowTools && len(tools) > 0 {
 		payload["tools"] = tools
@@ -546,6 +573,7 @@ func decodeArguments(raw any) map[string]string {
 
 var (
 	completeToolPattern = regexp.MustCompile(`(?is)<tool_call>.*?</tool_call>`)
+	jsonToolPattern     = regexp.MustCompile(`(?is)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 	toolPattern         = regexp.MustCompile(`(?is)<tool_call>\s*([a-zA-Z0-9_]+)\s*(.*?)</tool_call>`)
 	argumentPattern     = regexp.MustCompile(`(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>\s*(.*?)\s*</arg_value>`)
 	thinkingPattern     = regexp.MustCompile(`(?is)<(?:analysis|think)>.*?</(?:analysis|think)>`)
@@ -555,22 +583,59 @@ var (
 )
 
 func parseTextToolCalls(content string, step int) []toolCall {
+	var result []toolCall
+
+	// Match JSON-format tool calls: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
+	for index, match := range jsonToolPattern.FindAllStringSubmatch(content, -1) {
+		if len(match) != 2 {
+			continue
+		}
+		var parsed struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		if err := json.Unmarshal([]byte(match[1]), &parsed); err == nil && parsed.Name != "" {
+			args := map[string]string{}
+			for k, v := range parsed.Arguments {
+				args[k] = fmt.Sprint(v)
+			}
+			data, _ := json.Marshal(args)
+			result = append(result, toolCall{
+				ID: fmt.Sprintf("text_tool_call_json_%d_%d", step, index), Type: "function",
+				Function: toolFunction{Name: parsed.Name, Arguments: string(data)},
+			})
+		}
+	}
+	if len(result) > 0 {
+		return result
+	}
+
+	// Match name + XML/JSON arguments: <tool_call>name ...</tool_call>
 	matches := toolPattern.FindAllStringSubmatch(content, -1)
-	result := make([]toolCall, 0, len(matches))
 	for index, match := range matches {
 		if len(match) != 3 {
 			continue
 		}
+		name := strings.TrimSpace(match[1])
+		payload := strings.TrimSpace(match[2])
 		arguments := map[string]string{}
-		for _, argument := range argumentPattern.FindAllStringSubmatch(match[2], -1) {
+		for _, argument := range argumentPattern.FindAllStringSubmatch(payload, -1) {
 			if len(argument) == 3 {
 				arguments[strings.TrimSpace(argument[1])] = strings.TrimSpace(argument[2])
+			}
+		}
+		if len(arguments) == 0 && strings.HasPrefix(payload, "{") {
+			var decoded map[string]any
+			if json.Unmarshal([]byte(payload), &decoded) == nil {
+				for k, v := range decoded {
+					arguments[k] = fmt.Sprint(v)
+				}
 			}
 		}
 		data, _ := json.Marshal(arguments)
 		result = append(result, toolCall{
 			ID: fmt.Sprintf("text_tool_call_%d_%d", step, index), Type: "function",
-			Function: toolFunction{Name: strings.TrimSpace(match[1]), Arguments: string(data)},
+			Function: toolFunction{Name: name, Arguments: string(data)},
 		})
 	}
 	return result
@@ -604,4 +669,13 @@ func truncate(value string, maximum int) string {
 		return value
 	}
 	return value[:maximum] + "…"
+}
+
+func firstString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

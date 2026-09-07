@@ -273,6 +273,12 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 		}
 	}
 	if target == nil {
+		if err != nil && isFileTooBig(err) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Пожалуйста, пришли видео размером до 20 МБ :3",
+				message.MessageID, nil)
+			return sendErr
+		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
 			"Пожалуйста, прикрепи видео к команде /round или ответь этой командой на видео сообщение :3",
 			message.MessageID, nil)
@@ -309,6 +315,12 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 		}
 	}
 	if target == nil {
+		if err != nil && isFileTooBig(err) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Пожалуйста, пришли медиа размером до 20 МБ :3",
+				message.MessageID, nil)
+			return sendErr
+		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
 			"Пожалуйста, прикрепи аудио или видео к команде /voice или ответь этой командой на медиа :3",
 			message.MessageID, nil)
@@ -345,6 +357,12 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 		}
 	}
 	if target == nil {
+		if err != nil && isFileTooBig(err) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Пожалуйста, пришли видео размером до 20 МБ :3",
+				message.MessageID, nil)
+			return sendErr
+		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
 			"Пожалуйста, прикрепи видео к команде /gif или ответь этой командой на видео :3",
 			message.MessageID, nil)
@@ -379,6 +397,12 @@ func (b *Bot) mediainfoCommand(ctx context.Context, message *telegram.Message) e
 		logError("mediainfo attachments", err)
 	}
 	if len(attachments) == 0 {
+		if err != nil && isFileTooBig(err) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ)",
+				message.MessageID, nil)
+			return sendErr
+		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
 			"Пожалуйста, прикрепи фото, видео или аудио к команде /mediainfo или ответь этой командой на медиа :3",
 			message.MessageID, nil)
@@ -472,4 +496,12 @@ func logError(context string, err error) {
 	if err != nil {
 		fmt.Printf("[%s] error: %v\n", context, err)
 	}
+}
+
+func isFileTooBig(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "file is too big") || strings.Contains(text, "слишком большой") || strings.Contains(text, "превышает лимит telegram") || strings.Contains(text, "20 мб")
 }

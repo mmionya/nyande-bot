@@ -87,7 +87,7 @@ func Load() (Config, error) {
 		LLMSystemPrompt:     strings.TrimSpace(os.Getenv("LLM_SYSTEM_PROMPT")),
 		LLMCooldown:         envDurationSeconds("LLM_COOLDOWN_SECONDS", 0),
 		LLMTimeout:          envDurationSeconds("LLM_REQUEST_TIMEOUT_SECONDS", 120*time.Second),
-		LLMMaxTokens:        envInt("LLM_MAX_TOKENS", 480, 1, 65536),
+		LLMMaxTokens:        envInt("LLM_MAX_TOKENS", 2048, 1, 65536),
 		LLMTemperature:      envFloat("LLM_TEMPERATURE", 0.6, 0, 2),
 		LLMMaxHistory:       envInt("LLM_MAX_HISTORY_MESSAGES", 8, 0, 100),
 		LLMHistoryFile:      envString("LLM_HISTORY_FILE", ".nyande-llm-history.json"),

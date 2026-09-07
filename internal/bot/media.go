@@ -203,7 +203,16 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 		images = images[:12]
 	}
 	if text == "" && len(images) == 0 && len(transcripts) == 0 {
+		if err != nil && isFileTooBig(err) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Отправь файл размером до 20 МБ :3",
+				message.MessageID, nil)
+			return sendErr
+		}
 		return nil
+	}
+	if err != nil && isFileTooBig(err) {
+		text += "\n\n[Системное уведомление: прикреплённый пользователем медиафайл весит больше 20 МБ, поэтому Telegram Bot API не разрешил боту его скачать. Объясни пользователю, что файл превышает лимит Telegram для ботов в 20 МБ]"
 	}
 	var mediaSpecs []string
 	for _, att := range attachments {
@@ -305,59 +314,66 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 		return nil, nil
 	}
 	var descriptors []struct {
-		kind   string
-		name   string
-		mime   string
-		fileID string
+		kind     string
+		name     string
+		mime     string
+		fileID   string
+		fileSize int64
 	}
 	if len(message.Photo) > 0 {
 		photo := message.Photo[len(message.Photo)-1]
 		descriptors = append(descriptors, struct {
-			kind   string
-			name   string
-			mime   string
-			fileID string
-		}{"photo", "photo.jpg", "image/jpeg", photo.FileID})
+			kind     string
+			name     string
+			mime     string
+			fileID   string
+			fileSize int64
+		}{"photo", "photo.jpg", "image/jpeg", photo.FileID, photo.FileSize})
 	}
 	if message.Video != nil {
 		descriptors = append(descriptors, struct {
-			kind   string
-			name   string
-			mime   string
-			fileID string
-		}{"video", firstString(message.Video.FileName, "video.mp4"), firstString(message.Video.MimeType, "video/mp4"), message.Video.FileID})
+			kind     string
+			name     string
+			mime     string
+			fileID   string
+			fileSize int64
+		}{"video", firstString(message.Video.FileName, "video.mp4"), firstString(message.Video.MimeType, "video/mp4"), message.Video.FileID, message.Video.FileSize})
 	}
 	if message.Animation != nil {
 		descriptors = append(descriptors, struct {
-			kind   string
-			name   string
-			mime   string
-			fileID string
-		}{"animation", firstString(message.Animation.FileName, "animation.mp4"), firstString(message.Animation.MimeType, "video/mp4"), message.Animation.FileID})
+			kind     string
+			name     string
+			mime     string
+			fileID   string
+			fileSize int64
+		}{"animation", firstString(message.Animation.FileName, "animation.mp4"), firstString(message.Animation.MimeType, "video/mp4"), message.Animation.FileID, message.Animation.FileSize})
 	}
 	if message.Voice != nil {
 		descriptors = append(descriptors, struct {
-			kind   string
-			name   string
-			mime   string
-			fileID string
-		}{"voice", "voice.ogg", firstString(message.Voice.MimeType, "audio/ogg"), message.Voice.FileID})
+			kind     string
+			name     string
+			mime     string
+			fileID   string
+			fileSize int64
+		}{"voice", "voice.ogg", firstString(message.Voice.MimeType, "audio/ogg"), message.Voice.FileID, message.Voice.FileSize})
 	}
 	if message.Audio != nil {
 		descriptors = append(descriptors, struct {
-			kind   string
-			name   string
-			mime   string
-			fileID string
-		}{"audio", firstString(message.Audio.FileName, "audio.mp3"), firstString(message.Audio.MimeType, "audio/mpeg"), message.Audio.FileID})
+			kind     string
+			name     string
+			mime     string
+			fileID   string
+			fileSize int64
+		}{"audio", firstString(message.Audio.FileName, "audio.mp3"), firstString(message.Audio.MimeType, "audio/mpeg"), message.Audio.FileID, message.Audio.FileSize})
 	}
 	if message.VideoNote != nil {
 		descriptors = append(descriptors, struct {
-			kind   string
-			name   string
-			mime   string
-			fileID string
-		}{"video_note", "video_note.mp4", "video/mp4", message.VideoNote.FileID})
+			kind     string
+			name     string
+			mime     string
+			fileID   string
+			fileSize int64
+		}{"video_note", "video_note.mp4", "video/mp4", message.VideoNote.FileID, message.VideoNote.FileSize})
 	}
 	if message.Document != nil {
 		mime := strings.ToLower(firstString(message.Document.MimeType, "application/octet-stream"))
@@ -372,18 +388,26 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 		}
 		if kind != "" {
 			descriptors = append(descriptors, struct {
-				kind   string
-				name   string
-				mime   string
-				fileID string
-			}{kind, firstString(message.Document.FileName, "document.bin"), mime, message.Document.FileID})
+				kind     string
+				name     string
+				mime     string
+				fileID   string
+				fileSize int64
+			}{kind, firstString(message.Document.FileName, "document.bin"), mime, message.Document.FileID, message.Document.FileSize})
 		}
 	}
 	attachments := make([]cachedAttachment, 0, len(descriptors))
 	var combined error
 	for _, descriptor := range descriptors {
+		if descriptor.fileSize > 20*1024*1024 {
+			combined = errors.Join(combined, fmt.Errorf("файл %s (%s) превышает лимит Telegram для скачивания ботами (максимум 20 МБ)", descriptor.name, formatFileSize(descriptor.fileSize)))
+			continue
+		}
 		data, filePath, err := b.telegram.DownloadFile(ctx, descriptor.fileID, b.cfg.MaxFileSize)
 		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "file is too big") {
+				err = fmt.Errorf("файл %s превышает лимит Telegram для скачивания ботами (максимум 20 МБ): %w", descriptor.name, err)
+			}
 			combined = errors.Join(combined, err)
 			continue
 		}
