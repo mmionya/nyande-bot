@@ -2,7 +2,10 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -51,9 +54,9 @@ func (b *Bot) reminderTools(message *telegram.Message) []llm.Tool {
 				if text == "" {
 					return "Reminder text cannot be empty.", nil
 				}
-				delay, err := strconv.Atoi(arguments["delay_seconds"])
-				if err != nil || delay < 5 {
-					return "Invalid delay_seconds. It must be at least 5 seconds.", nil
+				delay, err := parseDelaySeconds(arguments["delay_seconds"])
+				if err != nil {
+					return fmt.Sprintf("Invalid delay: %v. Please specify delay in seconds (minimum 5) or duration like '10m', '1h'.", err), nil
 				}
 				triggerAt := time.Now().UTC().Add(time.Duration(delay) * time.Second)
 				id, err := b.reminders.Save(ctx, reminders.Reminder{
@@ -94,6 +97,9 @@ func (b *Bot) reminderTools(message *telegram.Message) []llm.Tool {
 			if rawURL == "" {
 				return "Please provide a valid web page URL.", nil
 			}
+			if isPrivateURL(rawURL) {
+				return "Access to local or private network URLs is not permitted.", nil
+			}
 			page, err := webpage.Fetch(ctx, rawURL, 6000)
 			if err != nil {
 				return fmt.Sprintf("Failed to read webpage %s: %v", rawURL, err), nil
@@ -126,4 +132,50 @@ func formatHumanDuration(d time.Duration) string {
 		return fmt.Sprintf("%d мин", m)
 	}
 	return fmt.Sprintf("%d сек", s)
+}
+
+func parseDelaySeconds(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, errors.New("empty delay")
+	}
+	if val, err := strconv.ParseFloat(raw, 64); err == nil {
+		if val < 5 {
+			return 0, errors.New("must be at least 5 seconds")
+		}
+		if val > 365*24*3600 {
+			return 0, errors.New("cannot exceed 1 year")
+		}
+		return int(val), nil
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		sec := int(d.Seconds())
+		if sec < 5 {
+			return 0, errors.New("must be at least 5 seconds")
+		}
+		if sec > 365*24*3600 {
+			return 0, errors.New("cannot exceed 1 year")
+		}
+		return sec, nil
+	}
+	return 0, fmt.Errorf("cannot parse %q as seconds or duration", raw)
+}
+
+func isPrivateURL(rawURL string) bool {
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		rawURL = "https://" + rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	hostname := parsed.Hostname()
+	if strings.EqualFold(hostname, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	}
+	return false
 }

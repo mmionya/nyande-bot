@@ -171,7 +171,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			if b.cfg.LLMVision {
 				images = append(images, llm.Image{MIME: attachment.MIME, Data: attachment.Data})
 			}
-		case "video", "animation":
+		case "video", "animation", "video_note":
 			if b.cfg.LLMVision {
 				frames, frameErr := extractVideoFrames(ctx, attachment.Data, attachment.Name, b.cfg.LLMVideoFrames)
 				if frameErr != nil {
@@ -351,6 +351,34 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 			fileID string
 		}{"audio", firstString(message.Audio.FileName, "audio.mp3"), firstString(message.Audio.MimeType, "audio/mpeg"), message.Audio.FileID})
 	}
+	if message.VideoNote != nil {
+		descriptors = append(descriptors, struct {
+			kind   string
+			name   string
+			mime   string
+			fileID string
+		}{"video_note", "video_note.mp4", "video/mp4", message.VideoNote.FileID})
+	}
+	if message.Document != nil {
+		mime := strings.ToLower(firstString(message.Document.MimeType, "application/octet-stream"))
+		kind := ""
+		switch {
+		case strings.HasPrefix(mime, "image/"):
+			kind = "photo"
+		case strings.HasPrefix(mime, "video/"):
+			kind = "video"
+		case strings.HasPrefix(mime, "audio/"):
+			kind = "audio"
+		}
+		if kind != "" {
+			descriptors = append(descriptors, struct {
+				kind   string
+				name   string
+				mime   string
+				fileID string
+			}{kind, firstString(message.Document.FileName, "document.bin"), mime, message.Document.FileID})
+		}
+	}
 	attachments := make([]cachedAttachment, 0, len(descriptors))
 	var combined error
 	for _, descriptor := range descriptors {
@@ -371,8 +399,18 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 }
 
 func messageHasMedia(message *telegram.Message) bool {
-	return len(message.Photo) > 0 || message.Video != nil || message.Animation != nil ||
-		message.Audio != nil || message.Voice != nil
+	if message == nil {
+		return false
+	}
+	if len(message.Photo) > 0 || message.Video != nil || message.Animation != nil ||
+		message.Audio != nil || message.Voice != nil || message.VideoNote != nil {
+		return true
+	}
+	if message.Document != nil {
+		mime := strings.ToLower(message.Document.MimeType)
+		return strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "audio/")
+	}
+	return false
 }
 
 func (b *Bot) isMentioned(message *telegram.Message) bool {

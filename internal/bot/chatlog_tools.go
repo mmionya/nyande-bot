@@ -75,8 +75,11 @@ func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
 			Execute: func(ctx context.Context, arguments map[string]string) (string, error) {
 				limit := 15
 				if val, ok := arguments["limit"]; ok {
-					if parsed, err := strconv.Atoi(val); err == nil && parsed > 0 {
+					cleaned := strings.TrimSpace(val)
+					if parsed, err := strconv.Atoi(cleaned); err == nil && parsed > 0 {
 						limit = parsed
+					} else if f, err := strconv.ParseFloat(cleaned, 64); err == nil && f > 0 {
+						limit = int(f)
 					}
 				}
 				if limit > 30 {

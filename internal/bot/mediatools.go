@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	_ "golang.org/x/image/webp"
@@ -63,7 +65,10 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", input)
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", input)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("📁 **Медиафайл**\n• Имя: `%s`\n• MIME: `%s`\n• Размер: `%s`", att.Name, att.MIME, sizeStr), nil
@@ -110,6 +115,8 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 		header := "🎬 **Видео**"
 		if att.Kind == "animation" {
 			header = "🎞 **Анимация (GIF)**"
+		} else if att.Kind == "video_note" {
+			header = "⭕ **Видеосообщение (кружочек)**"
 		}
 		fmt.Fprintf(&bld, "%s\n", header)
 		fmt.Fprintf(&bld, "• Разрешение: `%dx%d px` (%s)\n", vStream.Width, vStream.Height, aspect)
@@ -173,8 +180,11 @@ func convertVideoToRound(ctx context.Context, data []byte, name string) ([]byte,
 		return nil, err
 	}
 
+	execCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
 	output := filepath.Join(tempDir, "round.mp4")
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	cmd := exec.CommandContext(execCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
 		"-i", input,
 		"-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=384:384,fps=30",
 		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
@@ -202,8 +212,11 @@ func convertAudioToVoice(ctx context.Context, data []byte, name string) ([]byte,
 		return nil, err
 	}
 
+	execCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
 	output := filepath.Join(tempDir, "voice.ogg")
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	cmd := exec.CommandContext(execCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
 		"-i", input,
 		"-vn",
 		"-c:a", "libopus", "-b:a", "64k", "-ar", "48000",
@@ -228,9 +241,13 @@ func convertVideoToGIF(ctx context.Context, data []byte, name string) ([]byte, e
 		return nil, err
 	}
 
+	execCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
 	output := filepath.Join(tempDir, "animation.mp4")
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	cmd := exec.CommandContext(execCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
 		"-i", input,
+		"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
 		"-an",
 		"-c:v", "libx264", "-pix_fmt", "yuv420p",
 		"-movflags", "+faststart",
@@ -250,14 +267,14 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 	}
 	var target *cachedAttachment
 	for i := range attachments {
-		if attachments[i].Kind == "video" || attachments[i].Kind == "animation" {
+		if attachments[i].Kind == "video" || attachments[i].Kind == "animation" || attachments[i].Kind == "video_note" {
 			target = &attachments[i]
 			break
 		}
 	}
 	if target == nil {
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
-			"Пожалуйста, прикрепи видео к команде /round или ответь этой командой на видео соощение :3",
+			"Пожалуйста, прикрепи видео к команде /round или ответь этой командой на видео сообщение :3",
 			message.MessageID, nil)
 		return err
 	}
@@ -270,8 +287,13 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 		return sendErr
 	}
 
-	_, err = b.telegram.SendVideoNote(ctx, message.Chat.ID, roundData, message.MessageID)
-	return err
+	if _, err = b.telegram.SendVideoNote(ctx, message.Chat.ID, roundData, message.MessageID); err != nil {
+		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+			fmt.Sprintf("Не удалось отправить кружочек: %v", err),
+			message.MessageID, nil)
+		return errors.Join(err, sendErr)
+	}
+	return nil
 }
 
 func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error {
@@ -281,7 +303,7 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 	}
 	var target *cachedAttachment
 	for i := range attachments {
-		if attachments[i].Kind == "audio" || attachments[i].Kind == "voice" || attachments[i].Kind == "video" || attachments[i].Kind == "animation" {
+		if attachments[i].Kind == "audio" || attachments[i].Kind == "voice" || attachments[i].Kind == "video" || attachments[i].Kind == "animation" || attachments[i].Kind == "video_note" {
 			target = &attachments[i]
 			break
 		}
@@ -301,8 +323,13 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 		return sendErr
 	}
 
-	_, err = b.telegram.SendVoice(ctx, message.Chat.ID, voiceData, "", message.MessageID)
-	return err
+	if _, err = b.telegram.SendVoice(ctx, message.Chat.ID, voiceData, "", message.MessageID); err != nil {
+		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+			fmt.Sprintf("Не удалось отправить голосовое сообщение: %v", err),
+			message.MessageID, nil)
+		return errors.Join(err, sendErr)
+	}
+	return nil
 }
 
 func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
@@ -312,7 +339,7 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 	}
 	var target *cachedAttachment
 	for i := range attachments {
-		if attachments[i].Kind == "video" || attachments[i].Kind == "animation" {
+		if attachments[i].Kind == "video" || attachments[i].Kind == "animation" || attachments[i].Kind == "video_note" {
 			target = &attachments[i]
 			break
 		}
@@ -332,13 +359,18 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 		return sendErr
 	}
 
-	_, err = b.telegram.SendUpload(ctx, message.Chat.ID, telegram.Upload{
+	if _, err = b.telegram.SendUpload(ctx, message.Chat.ID, telegram.Upload{
 		Kind: "animation",
 		Name: "animation.mp4",
 		MIME: "video/mp4",
 		Data: gifData,
-	}, message.MessageID)
-	return err
+	}, message.MessageID); err != nil {
+		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
+			fmt.Sprintf("Не удалось отправить гифку: %v", err),
+			message.MessageID, nil)
+		return errors.Join(err, sendErr)
+	}
+	return nil
 }
 
 func (b *Bot) mediainfoCommand(ctx context.Context, message *telegram.Message) error {

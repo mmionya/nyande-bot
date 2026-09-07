@@ -33,6 +33,7 @@ var (
 		regexp.MustCompile(`(?is)<!--[\s\S]*?-->`),
 	}
 	tagPattern     = regexp.MustCompile(`(?s)<[^>]+>`)
+	blockPattern   = regexp.MustCompile(`(?i)</?(?:p|div|br|hr|h[1-6]|li|tr|table|blockquote)[^>]*>`)
 	newlinePattern = regexp.MustCompile(`\n{3,}`)
 	spacePattern   = regexp.MustCompile(`[ \t]{2,}`)
 )
@@ -108,7 +109,6 @@ func ExtractText(rawHTML string) string {
 		rawHTML = pattern.ReplaceAllString(rawHTML, " ")
 	}
 	// Replace block elements with newlines
-	blockPattern := regexp.MustCompile(`(?i)</?(?:p|div|br|hr|h[1-6]|li|tr|table|blockquote)[^>]*>`)
 	rawHTML = blockPattern.ReplaceAllString(rawHTML, "\n")
 	text := tagPattern.ReplaceAllString(rawHTML, " ")
 	text = html.UnescapeString(text)

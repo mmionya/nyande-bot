@@ -508,6 +508,16 @@ func (b *Bot) reminderLoop(ctx context.Context) {
 				_, sendErr := b.telegram.SendMessage(ctx, r.ChatID, text, r.MessageID, nil)
 				if sendErr != nil {
 					log.Printf("[reminders] send reminder %d failed: %v", r.ID, sendErr)
+					errText := strings.ToLower(sendErr.Error())
+					isPermanent := strings.Contains(errText, "kicked") ||
+						strings.Contains(errText, "blocked") ||
+						strings.Contains(errText, "not found") ||
+						strings.Contains(errText, "deactivated") ||
+						strings.Contains(errText, "migrated") ||
+						time.Since(r.TriggerAt) > 5*time.Minute
+					if !isPermanent {
+						continue
+					}
 				}
 				if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
 					log.Printf("[reminders] mark completed %d failed: %v", r.ID, err)
