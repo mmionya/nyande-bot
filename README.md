@@ -217,3 +217,19 @@ resources/            shared strings.json
 ```
 
 Only download and share content that you own or have permission to use.
+
+## Quote collection
+
+Reply with `/quote` to a text message or media caption to save it and receive a
+PNG card with the author's name, available profile photo, and date. Forwarded
+messages use the original author when Telegram provides it. Quotes support up to
+1,200 characters; rich formatting and animated emoji are not preserved in cards.
+
+- `/quote random` — a random quote from this chat.
+- `/quote list` — the latest 10 quotes and their IDs.
+- `/quote 12` — show quote #12.
+- `/quote delete 12` — delete a quote as its author, saver, or a chat administrator.
+
+Collections are isolated by chat and saving the same message twice is idempotent.
+SQLite storage is configured with `QUOTE_DB_FILE`; Compose keeps it in the
+persistent volume at `/app/data/quotes.db`. This Telegram feature does not require an LLM.

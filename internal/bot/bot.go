@@ -17,6 +17,7 @@ import (
 	"github.com/mmionya/nyande-bot/internal/downloader"
 	"github.com/mmionya/nyande-bot/internal/llm"
 	"github.com/mmionya/nyande-bot/internal/memory"
+	"github.com/mmionya/nyande-bot/internal/quotes"
 	"github.com/mmionya/nyande-bot/internal/reminders"
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	"github.com/mmionya/nyande-bot/resources"
@@ -40,6 +41,7 @@ type Bot struct {
 	media      *mediaCache
 	chatlog    *chatlog.Store
 	reminders  *reminders.Store
+	quotes     *quotes.Store
 
 	adminMu         sync.Mutex
 	adminCache      map[adminKey]adminEntry
@@ -89,6 +91,17 @@ func New(cfg config.Config) (*Bot, error) {
 		}
 		return nil, fmt.Errorf("open reminders database: %w", err)
 	}
+	quoteStore, err := quotes.Open(cfg.QuoteDBFile)
+	if err != nil {
+		_ = remindersStore.Close()
+		if memories != nil {
+			_ = memories.Close()
+		}
+		if chatlogStore != nil {
+			_ = chatlogStore.Close()
+		}
+		return nil, fmt.Errorf("open quote database: %w", err)
+	}
 	return &Bot{
 		cfg: cfg, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
 		llm: llm.New(cfg), memories: memories, chatlog: chatlogStore, reminders: remindersStore, state: NewState(), allowlist: allowed, linkConfig: linkConfig, media: newMediaCache(512),
@@ -96,11 +109,17 @@ func New(cfg config.Config) (*Bot, error) {
 		tttGames:   make(map[int64]*ticTacToeGame), tttPending: make(map[int64][2]int64),
 		checkers: make(map[int64]*checkersGame), checkersPending: make(map[int64][2]int64),
 		wordleGames: make(map[wordleKey]*wordleGame),
+		quotes:      quoteStore,
 	}, nil
 }
 
 func (b *Bot) Close() error {
 	var errs []error
+	if b.quotes != nil {
+		if err := b.quotes.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if b.memories != nil {
 		if err := b.memories.Close(); err != nil {
 			errs = append(errs, err)
@@ -133,6 +152,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "ttt", "description": "крестики-нолики в чате"},
 		{"command": "checkers", "description": "шашки в чате"},
 		{"command": "wordle", "description": "английское слово дня в чате"},
+		{"command": "quote", "description": "цитатник: карточка, random, list, номер"},
 		{"command": "donate", "description": "поддержать бота"},
 		{"command": "stats", "description": "статистика"},
 		{"command": "reset", "description": "очистить историю диалога"},
@@ -258,6 +278,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) erro
 			return b.startCheckers(ctx, message)
 		case "wordle":
 			return b.startWordle(ctx, message)
+		case "quote":
+			return b.quoteCommand(ctx, message, arguments)
 		case "round":
 			return b.roundCommand(ctx, message)
 		case "voice":

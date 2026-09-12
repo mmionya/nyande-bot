@@ -58,6 +58,7 @@ type Config struct {
 	ChatLogFile         string
 	ChatLogMaxPerChat   int
 	ReminderDBFile      string
+	QuoteDBFile         string
 }
 
 func Load() (Config, error) {
@@ -109,6 +110,7 @@ func Load() (Config, error) {
 		ChatLogFile:         envString("CHAT_LOG_FILE", ".nyande-chatlog.db"),
 		ChatLogMaxPerChat:   envInt("CHAT_LOG_MAX_PER_CHAT", 50000, 100, 1000000),
 		ReminderDBFile:      envString("REMINDER_DB_FILE", ".nyande-reminders.db"),
+		QuoteDBFile:         envString("QUOTE_DB_FILE", ".nyande-quotes.db"),
 	}
 	if cfg.BotToken == "" && cfg.DiscordToken == "" {
 		return Config{}, errors.New("BOT_TOKEN or DISCORD_BOT_TOKEN is required")

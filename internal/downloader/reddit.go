@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -18,7 +19,7 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 		return d.downloadYTDLP(ctx, value)
 	}
 	jsonURL := *resolved
-	jsonURL.RawQuery = ""
+	jsonURL.RawQuery = "raw_json=1"
 	jsonURL.Fragment = ""
 	jsonURL.Path = strings.TrimRight(jsonURL.Path, "/") + ".json"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, jsonURL.String(), nil)
@@ -29,6 +30,9 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 	response, err := d.client.Do(request)
 	if err == nil {
 		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			log.Printf("[reddit] JSON request failed: %v; trying yt-dlp", redditError(response.StatusCode))
+		}
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			var payload any
 			if json.NewDecoder(response.Body).Decode(&payload) == nil {
@@ -57,6 +61,15 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 }
 
 func (d *Downloader) resolveRedditURL(ctx context.Context, value *url.URL) (*url.URL, error) {
+	if hostMatches(value.Hostname(), "reddit.com") {
+		parts := strings.Split(strings.Trim(value.Path, "/"), "/")
+		if len(parts) == 2 && parts[0] == "gallery" && parts[1] != "" {
+			resolved := *value
+			resolved.Path = "/comments/" + parts[1] + "/"
+			resolved.RawPath = ""
+			return &resolved, nil
+		}
+	}
 	if !hostMatches(value.Hostname(), "redd.it") {
 		return value, nil
 	}

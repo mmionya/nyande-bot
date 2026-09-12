@@ -31,8 +31,18 @@ func (u User) DisplayName() string {
 }
 
 type Chat struct {
-	ID   int64  `json:"id"`
-	Type string `json:"type"`
+	ID    int64  `json:"id"`
+	Type  string `json:"type"`
+	Title string `json:"title,omitempty"`
+}
+
+type MessageOrigin struct {
+	Type           string `json:"type"`
+	Date           int64  `json:"date"`
+	SenderUser     *User  `json:"sender_user,omitempty"`
+	SenderUserName string `json:"sender_user_name,omitempty"`
+	SenderChat     *Chat  `json:"sender_chat,omitempty"`
+	Chat           *Chat  `json:"chat,omitempty"`
 }
 
 type Message struct {
@@ -45,6 +55,8 @@ type Message struct {
 	Entities          []MessageEntity    `json:"entities,omitempty"`
 	CaptionEntities   []MessageEntity    `json:"caption_entities,omitempty"`
 	ReplyToMessage    *Message           `json:"reply_to_message,omitempty"`
+	SenderChat        *Chat              `json:"sender_chat,omitempty"`
+	ForwardOrigin     *MessageOrigin     `json:"forward_origin,omitempty"`
 	Photo             []PhotoSize        `json:"photo,omitempty"`
 	Video             *Video             `json:"video,omitempty"`
 	Animation         *Animation         `json:"animation,omitempty"`

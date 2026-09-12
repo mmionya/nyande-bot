@@ -23,6 +23,8 @@ import (
 
 const maxAgentSteps = 3
 
+const serverSearchRetryDelay = 5 * time.Minute
+
 type Image struct {
 	MIME string
 	Data []byte
@@ -54,10 +56,11 @@ type Tool struct {
 }
 
 type Client struct {
-	cfg     config.Config
-	http    *http.Client
-	mu      sync.Mutex
-	history map[int64][]chatMessage
+	cfg                 config.Config
+	http                *http.Client
+	mu                  sync.Mutex
+	history             map[int64][]chatMessage
+	serverSearchRetryAt time.Time // guarded by mu
 }
 
 type chatMessage struct {
@@ -215,8 +218,19 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	for step := 0; step < maxAgentSteps; step++ {
 		var err error
 		response, err = c.complete(ctx, messages, tools, true)
+		if err != nil && strings.Contains(strings.ToLower(err.Error()), "server tool request failed") {
+			fallback, replaced := localSearchFallback(tools)
+			if replaced {
+				c.mu.Lock()
+				c.serverSearchRetryAt = time.Now().Add(serverSearchRetryDelay)
+				c.mu.Unlock()
+				log.Printf("[llm] server search failed, using local search for %s: %v", serverSearchRetryDelay, err)
+				tools = fallback
+				response, err = c.complete(ctx, messages, tools, true)
+			}
+		}
 		if err != nil {
-			if step == 0 {
+			if step == 0 && len(tools) > 0 && ctx.Err() == nil {
 				log.Printf("[llm] request with tools failed, retrying without tools: %v", err)
 				response, err = c.complete(ctx, messages, nil, false)
 				tools = nil
@@ -323,11 +337,6 @@ func (c *Client) complete(ctx context.Context, messages []chatMessage, tools []m
 		"model": c.cfg.LLMModel, "messages": messages,
 		"temperature": c.cfg.LLMTemperature, "max_tokens": c.cfg.LLMMaxTokens,
 	}
-	if strings.Contains(c.cfg.LLMBaseURL, "openrouter") && c.cfg.LLMMaxTokens >= 1024 {
-		payload["reasoning"] = map[string]any{
-			"max_tokens": c.cfg.LLMMaxTokens / 2,
-		}
-	}
 	if allowTools && len(tools) > 0 {
 		payload["tools"] = tools
 		payload["tool_choice"] = "auto"
@@ -426,7 +435,7 @@ func (c *Client) requestTools(custom ...Tool) []map[string]any {
 	if !c.nativePerplexitySearch() {
 		tools = append(tools, currentTimeTool())
 		if c.cfg.LLMWebSearch {
-			if c.usesOpenRouter() {
+			if c.usesOpenRouter() && c.serverSearchReady() {
 				tools = append(tools, openRouterWebSearchTool(c.cfg.LLMWebSearchResults))
 			} else {
 				tools = append(tools, webSearchTool())
@@ -453,6 +462,12 @@ func (c *Client) requestTools(custom ...Tool) []map[string]any {
 	return tools
 }
 
+func (c *Client) serverSearchReady() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !time.Now().Before(c.serverSearchRetryAt)
+}
+
 func findTool(tools []Tool, name string) *Tool {
 	for index := range tools {
 		if tools[index].Name == name {
@@ -460,6 +475,21 @@ func findTool(tools []Tool, name string) *Tool {
 		}
 	}
 	return nil
+}
+
+// Keep application tools available when OpenRouter's hosted search fails.
+func localSearchFallback(tools []map[string]any) ([]map[string]any, bool) {
+	fallback := make([]map[string]any, 0, len(tools))
+	replaced := false
+	for _, tool := range tools {
+		if tool["type"] == "openrouter:web_search" {
+			fallback = append(fallback, webSearchTool())
+			replaced = true
+		} else {
+			fallback = append(fallback, tool)
+		}
+	}
+	return fallback, replaced
 }
 
 func applicationToolsPrompt(tools []Tool) string {
