@@ -17,6 +17,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/mmionya/nyande-bot/internal/config"
 	"github.com/mmionya/nyande-bot/internal/downloader"
+	"github.com/mmionya/nyande-bot/internal/llm"
 	"github.com/mmionya/nyande-bot/internal/logutil"
 	"github.com/mmionya/nyande-bot/resources"
 )
@@ -29,11 +30,13 @@ const (
 var discordURLPattern = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"']+`)
 
 type Bot struct {
-	cfg        config.Config
-	session    *discordgo.Session
-	downloader *downloader.Downloader
-	semaphore  chan struct{}
-	startedAt  time.Time
+	llm           languageModel
+	conversations sync.Map
+	cfg           config.Config
+	session       *discordgo.Session
+	downloader    *downloader.Downloader
+	semaphore     chan struct{}
+	startedAt     time.Time
 
 	ctxMu sync.RWMutex
 	ctx   context.Context
@@ -60,6 +63,7 @@ func New(cfg config.Config) (*Bot, error) {
 
 	result := &Bot{
 		cfg: cfg, session: session, downloader: downloader.New(cfg),
+		llm:       llm.New(discordLLMConfig(cfg)),
 		semaphore: make(chan struct{}, 8), startedAt: time.Now(),
 		uniqueChannels: make(map[string]struct{}),
 	}
@@ -122,6 +126,7 @@ func (b *Bot) handleMessageCreate(session *discordgo.Session, event *discordgo.M
 			return
 		}
 	}
+	b.handleLLM(session, event.Message)
 }
 
 func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Message, command string) bool {
@@ -138,6 +143,8 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 		err := b.handleGIF(session, message)
 		log.Printf("[command] finished platform=discord chat=%s user=%s msg=%s command=%q failed=%t elapsed_ms=%d", message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
 		return true
+	case "reset":
+		response = b.resetLLM(message)
 	case "help":
 		response = resources.Format("discord_help", map[string]any{"prefix": b.cfg.DiscordPrefix})
 	case "ping":

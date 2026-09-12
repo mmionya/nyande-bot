@@ -1,4 +1,9 @@
 {
+  "discord_llm_greeting": "Привет!",
+  "discord_llm_failed": "Не получилось ответить. Попробуй ещё раз чуть позже.",
+  "discord_llm_disabled": "Общение через LLM сейчас отключено.",
+  "discord_reset_done": "История диалога в этом канале очищена :3",
+  "discord_reset_empty": "История диалога в этом канале уже пуста :3",
   "discord_gif_usage": "Прикрепи видео к команде `{prefix}gif`, добавь поддерживаемую ссылку или ответь этой командой на сообщение с видео :3",
   "discord_gif_reply_failed": "Не удалось прочитать сообщение с видео. Прикрепи видео к команде или добавь ссылку.",
   "discord_gif_no_video": "В этой публикации нет видео для GIF.",
@@ -7,7 +12,7 @@
   "discord_gif_timeout": "Конвертация заняла слишком много времени.",
   "discord_gif_too_large": "GIF превышает `MAX_FILE_SIZE`.",
   "discord_gif_filename": "animation.gif",
-  "discord_help": "Я умею скачивать с TikTok, Instagram, X/Twitter, Xiaohongshu, Pinterest, YouTube или Reddit. Также поддерживаются прямые ссылки на медиа.\n\nКоманды: `{prefix}help`, `{prefix}ping`, `{prefix}stats`, `{prefix}gif`.\n`{prefix}gif` — сделать GIF из прикреплённого видео, ссылки или видео в сообщении, на которое ты отвечаешь.",
+  "discord_help": "Я умею скачивать с TikTok, Instagram, X/Twitter, Xiaohongshu, Pinterest, YouTube или Reddit. Также поддерживаются прямые ссылки на медиа.\n\nКоманды: `{prefix}help`, `{prefix}ping`, `{prefix}stats`, `{prefix}gif`, `{prefix}reset`.\n`{prefix}gif` — сделать GIF из прикреплённого видео, ссылки или видео в сообщении, на которое ты отвечаешь.\nПри включённой LLM отвечаю в личке, а на сервере — на упоминания, ответы на мои сообщения и слова-триггеры. `{prefix}reset` очищает историю этого канала.",
   "discord_ping": "ПООООООООНГ :3c",
   "discord_stats": "Статистика Discord\nАптайм: {uptime}\nКаналы: {channels}\nСообщения: {messages}\nКоманды: {commands}\nМедиа: {media_total} (успешно: {media_success}, ошибок: {media_errors}, {error_rate}%)",
   "discord_downloading": "Скачиваю… :3",

@@ -3,7 +3,7 @@
 **English** | [Русский](README.ru.md)
 
 `nyande-bot` is a Telegram and Discord media downloader with an optional
-Telegram LLM assistant. This Go edition incorporates useful additions from the
+LLM assistant on both platforms. This Go edition incorporates useful additions from the
 original Python and Rust versions.
 
 ## Features
@@ -107,9 +107,17 @@ Invite it to a server with permission to view channels, send messages, attach
 files, and read message history. The bot processes the first supported media
 link in each message and replies with the downloaded files.
 
-Discord commands use `!` by default: `!help`, `!ping`, `!stats`, and `!gif`. Change the
-prefix with `DISCORD_COMMAND_PREFIX`. The LLM, moderation, payments, and chat
-games currently remain Telegram-only.
+Discord commands use `!` by default: `!help`, `!ping`, `!stats`, `!gif`, and `!reset`. Change the
+prefix with `DISCORD_COMMAND_PREFIX`.
+
+Set `LLM_ENABLED=true`, `LLM_API_KEY`, and `LLM_MODEL` to enable text conversations
+using the same `LLM_*` configuration as Telegram. Discord replies in DMs and,
+on servers, when mentioned, replied to, or invoked with `LLM_TRIGGER_WORDS`.
+Media links and commands take priority. History and cooldown are scoped to each
+channel; `!reset` clears that channel's conversation history. Discord history is
+stored in `LLM_HISTORY_FILE` with `.discord` appended, separately from Telegram.
+Long replies are split into messages. Media analysis, long-term memory,
+application tools, moderation, payments, and games remain Telegram features.
 
 ## LLM and media analysis
 
@@ -198,7 +206,7 @@ Use `!gif` with an attached video, a supported link, or as a reply to a video
 message. The bot sends a silent GIF at 15 fps and up to 480 pixels wide,
 subject to `MAX_FILE_SIZE`.
 
-Discord provides `!help`, `!ping`, `!stats`, and `!gif` (or the prefix configured in
+Discord provides `!help`, `!ping`, `!stats`, `!gif`, and `!reset` (or the prefix configured in
 `DISCORD_COMMAND_PREFIX`). Media links do not need a command.
 
 ## Local validation
