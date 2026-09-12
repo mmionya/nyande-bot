@@ -84,6 +84,11 @@ You need Podman or Docker with a Compose provider, plus a Telegram bot from
    Replace `docker compose` with `podman compose` in these commands when using
    Podman.
 
+Python dependencies are installed with `uv` and a download cache. The Whisper
+layer is independent of the bot binary, so Go code changes reuse it during
+normal cached builds. The first PyTorch/CUDA dependency download can still
+take time.
+
 The default `runtime` image includes local Whisper. If transcription is not
 needed, use the smaller image:
 
@@ -102,7 +107,7 @@ Invite it to a server with permission to view channels, send messages, attach
 files, and read message history. The bot processes the first supported media
 link in each message and replies with the downloaded files.
 
-Discord commands use `!` by default: `!help`, `!ping`, and `!stats`. Change the
+Discord commands use `!` by default: `!help`, `!ping`, `!stats`, and `!gif`. Change the
 prefix with `DISCORD_COMMAND_PREFIX`. The LLM, moderation, payments, and chat
 games currently remain Telegram-only.
 
@@ -189,7 +194,11 @@ whether unsupported links are deleted. The setting is stored in
 | `/allowlink example.com` | allow a domain in a private chat or as an administrator |
 | `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
 
-Discord provides `!help`, `!ping`, and `!stats` (or the prefix configured in
+Use `!gif` with an attached video, a supported link, or as a reply to a video
+message. The bot sends a silent GIF at 15 fps and up to 480 pixels wide,
+subject to `MAX_FILE_SIZE`.
+
+Discord provides `!help`, `!ping`, `!stats`, and `!gif` (or the prefix configured in
 `DISCORD_COMMAND_PREFIX`). Media links do not need a command.
 
 ## Local validation
@@ -233,3 +242,29 @@ messages use the original author when Telegram provides it. Quotes support up to
 Collections are isolated by chat and saving the same message twice is idempotent.
 SQLite storage is configured with `QUOTE_DB_FILE`; Compose keeps it in the
 persistent volume at `/app/data/quotes.db`. This Telegram feature does not require an LLM.
+
+## Find and send media with the LLM
+
+Ask “Find a short cat video and send it here” or “Find a capybara photo and send
+it as an image.” With `LLM_WEB_SEARCH_ENABLED=true`, the model can find a URL
+and call `download_media` to download and send files to the current Telegram chat.
+The tool accepts supported platform post URLs and direct image/video URLs, not
+ordinary articles or search result pages.
+
+Existing `MAX_FILE_SIZE` and `MAX_MEDIA_ITEMS` limits apply. Each attempt has a
+three-minute timeout; repeated calls for the same URL in one request do not send
+duplicate files. Failures and partial deliveries are reported back to the model.
+Availability still depends on the source site and downloader configuration.
+
+## Activity logs
+
+`docker compose logs -f bot` shows `[command]` events (command name, chat, user,
+message and duration), `[media]` events (download source, file type/name/size,
+and delivery outcome), `[tool]` events (LLM tool execution), and `[search]`
+events (local search results). Commands and media are logged for Telegram and
+Discord. Command arguments and tool response contents are not included in these
+events; the download URL field omits credentials, query parameters and fragments.
+`[tool] returned` means the tool returned; actual file delivery is recorded by
+`[media] sent` or `[media] send_failed`.
+
+TikTok requests can use `search_tiktok` when web search is enabled. It keeps only unique individual video URLs, using OpenRouter search citations with a scoped DuckDuckGo fallback. `download_media` can then download and send a selected result. This searches indexed pages; freshness, popularity and download availability are not guaranteed. Hosted search adds an LLM request; no new API keys are required.

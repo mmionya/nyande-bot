@@ -86,6 +86,14 @@ type completionResponse struct {
 	Choices []struct {
 		FinishReason string `json:"finish_reason"`
 		Message      struct {
+			Annotations []struct {
+				Type     string `json:"type"`
+				Citation struct {
+					URL     string `json:"url"`
+					Title   string `json:"title"`
+					Content string `json:"content"`
+				} `json:"url_citation"`
+			} `json:"annotations"`
 			Role             string     `json:"role"`
 			Content          string     `json:"content"`
 			ReasoningContent string     `json:"reasoning_content,omitempty"`
@@ -271,6 +279,9 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 			Role: "assistant", Content: choice.Message.Content, ToolCalls: calls,
 		})
 		for _, call := range calls {
+			toolStarted := time.Now()
+			toolFailed := false
+			log.Printf("[tool] started chat=%d step=%d name=%q", request.ChatID, step+1, call.Function.Name)
 			arguments := decodeArguments(call.Function.Arguments)
 			var result string
 			switch call.Function.Name {
@@ -289,14 +300,17 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 			default:
 				custom := findTool(request.Tools, call.Function.Name)
 				if custom == nil || custom.Execute == nil {
+					toolFailed = true
 					result = resources.Get("llm.prompt.unknown_tool")
 				} else {
 					result, err = custom.Execute(ctx, arguments)
 					if err != nil {
+						toolFailed = true
 						result = "Tool failed: " + err.Error()
 					}
 				}
 			}
+			log.Printf("[tool] returned chat=%d step=%d name=%q execution_error=%t elapsed_ms=%d", request.ChatID, step+1, call.Function.Name, toolFailed, time.Since(toolStarted).Milliseconds())
 			messages = append(messages, chatMessage{
 				Role: "tool", ToolCallID: call.ID, Name: call.Function.Name, Content: result,
 			})

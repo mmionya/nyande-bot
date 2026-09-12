@@ -9,22 +9,30 @@ RUN CGO_ENABLED=0 go test ./cmd/... ./internal/... ./resources/... && \
 
 FROM denoland/deno:bin-2.9.4 AS deno-runtime
 
-FROM python:3.12-slim-bookworm AS runtime-lite
+FROM python:3.12-slim-bookworm AS media-runtime
 ENV PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_LINK_MODE=copy
+COPY --from=ghcr.io/astral-sh/uv:0.12.12 /uv /usr/local/bin/uv
 COPY --from=deno-runtime /deno /usr/local/bin/deno
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl ffmpeg \
-    && pip install --no-cache-dir "yt-dlp[default]" \
     && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=nyande-uv,target=/root/.cache/uv,sharing=locked \
+    uv pip install --system "yt-dlp[default]"
 WORKDIR /app
-COPY --from=builder /out/nyande-bot /usr/local/bin/nyande-bot
 RUN useradd --create-home --uid 10001 nyande && mkdir -p /app/data \
 	&& chown -R nyande:nyande /app
-USER nyande
 ENTRYPOINT ["/usr/local/bin/nyande-bot"]
 
-FROM runtime-lite AS runtime
-USER root
-RUN pip install --no-cache-dir openai-whisper
+# Keep Python dependencies independent of changes to the Go binary.
+FROM media-runtime AS whisper-runtime
+RUN --mount=type=cache,id=nyande-uv,target=/root/.cache/uv,sharing=locked \
+    uv pip install --system openai-whisper
+
+FROM media-runtime AS runtime-lite
+COPY --from=builder /out/nyande-bot /usr/local/bin/nyande-bot
+USER nyande
+
+FROM whisper-runtime AS runtime
+COPY --from=builder /out/nyande-bot /usr/local/bin/nyande-bot
 USER nyande

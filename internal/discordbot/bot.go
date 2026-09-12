@@ -17,6 +17,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/mmionya/nyande-bot/internal/config"
 	"github.com/mmionya/nyande-bot/internal/downloader"
+	"github.com/mmionya/nyande-bot/internal/logutil"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const (
@@ -78,7 +80,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		identity = b.session.State.User.Username
 	}
 	log.Printf("[discord] started as %s, command_prefix=%q", identity, b.cfg.DiscordPrefix)
-	if err := b.session.UpdateGameStatus(0, b.cfg.DiscordPrefix+"help | media links"); err != nil {
+	if err := b.session.UpdateGameStatus(0, resources.Format("discord_activity", map[string]any{"prefix": b.cfg.DiscordPrefix})); err != nil {
 		log.Printf("[discord] could not update status: %v", err)
 	}
 
@@ -123,30 +125,43 @@ func (b *Bot) handleMessageCreate(session *discordgo.Session, event *discordgo.M
 }
 
 func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Message, command string) bool {
+	started := time.Now()
+	author := ""
+	if message.Author != nil {
+		author = message.Author.ID
+	}
+	log.Printf("[command] started platform=discord chat=%s user=%s msg=%s command=%q", message.ChannelID, author, message.ID, command)
 	var response string
 	switch command {
+	case "gif":
+		b.commands.Add(1)
+		err := b.handleGIF(session, message)
+		log.Printf("[command] finished platform=discord chat=%s user=%s msg=%s command=%q failed=%t elapsed_ms=%d", message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
+		return true
 	case "help":
-		response = fmt.Sprintf(
-			"Пришли ссылку — я скачаю фото, видео или карусель из TikTok, Instagram, X/Twitter, Xiaohongshu, Pinterest, YouTube или Reddit. Также поддерживаются прямые ссылки на медиа.\n\nКоманды: `%[1]shelp`, `%[1]sping`, `%[1]sstats`.",
-			b.cfg.DiscordPrefix,
-		)
+		response = resources.Format("discord_help", map[string]any{"prefix": b.cfg.DiscordPrefix})
 	case "ping":
-		response = "мяу! бот работает :3"
+		response = resources.Get("discord_ping")
 	case "stats":
 		response = b.statsText()
 	default:
+		log.Printf("[command] unknown platform=discord chat=%s msg=%s command=%q", message.ChannelID, message.ID, command)
 		return false
 	}
 	b.commands.Add(1)
-	if _, err := session.ChannelMessageSendReply(message.ChannelID, response, message.SoftReference()); err != nil {
+	_, err := session.ChannelMessageSendReply(message.ChannelID, response, message.SoftReference())
+	if err != nil {
 		log.Printf("[discord] command %s response failed: %v", command, err)
 	}
+	log.Printf("[command] finished platform=discord chat=%s user=%s msg=%s command=%q failed=%t elapsed_ms=%d", message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
 	return true
 }
 
 func (b *Bot) handleMedia(session *discordgo.Session, message *discordgo.Message, mediaURL string) {
+	started := time.Now()
+	log.Printf("[media] download_started platform=discord chat=%s msg=%s url=%q", message.ChannelID, message.ID, logutil.URL(mediaURL))
 	b.mediaTotal.Add(1)
-	status, err := session.ChannelMessageSendReply(message.ChannelID, "Скачиваю… :3", message.SoftReference())
+	status, err := session.ChannelMessageSendReply(message.ChannelID, resources.Get("discord_downloading"), message.SoftReference())
 	if err != nil {
 		b.mediaErrors.Add(1)
 		log.Printf("[discord] could not send download status: %v", err)
@@ -158,23 +173,31 @@ func (b *Bot) handleMedia(session *discordgo.Session, message *discordgo.Message
 	result, err := b.downloader.Download(ctx, mediaURL)
 	if err != nil {
 		b.mediaErrors.Add(1)
-		log.Printf("[discord media] %s failed: %v", mediaURL, err)
+		log.Printf("[media] download_failed platform=discord chat=%s msg=%s url=%q elapsed_ms=%d: %v", message.ChannelID, message.ID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
 		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, downloadErrorText(err))
 		return
 	}
 	if len(result.Items) == 0 {
+		log.Printf("[media] download_empty platform=discord chat=%s msg=%s source=%q", message.ChannelID, message.ID, result.Source)
 		b.mediaErrors.Add(1)
-		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, "Не получилось найти медиа в этой публикации.")
+		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_media_not_found"))
 		return
 	}
 
-	_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, "Отправляю…")
+	log.Printf("[media] downloaded platform=discord chat=%s msg=%s source=%q items=%d elapsed_ms=%d", message.ChannelID, message.ID, result.Source, len(result.Items), time.Since(started).Milliseconds())
+	for index, item := range result.Items {
+		log.Printf("[media] file platform=discord chat=%s msg=%s index=%d kind=%q name=%q bytes=%d", message.ChannelID, message.ID, index+1, item.Kind, item.Name, len(item.Data))
+	}
+	sendStarted := time.Now()
+	log.Printf("[media] send_started platform=discord chat=%s msg=%s items=%d", message.ChannelID, message.ID, len(result.Items))
+	_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_sending"))
 	if err := sendResult(session, message, result); err != nil {
 		b.mediaErrors.Add(1)
-		log.Printf("[discord media] send failed: %v", err)
-		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, "Не получилось отправить файл. Проверь `MAX_FILE_SIZE` и лимит вложений сервера Discord.")
+		log.Printf("[media] send_failed platform=discord chat=%s msg=%s elapsed_ms=%d: %v", message.ChannelID, message.ID, time.Since(sendStarted).Milliseconds(), err)
+		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_send_failed"))
 		return
 	}
+	log.Printf("[media] sent platform=discord chat=%s msg=%s items=%d send_ms=%d total_ms=%d", message.ChannelID, message.ID, len(result.Items), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
 	if err := session.ChannelMessageDelete(message.ChannelID, status.ID); err != nil {
 		log.Printf("[discord] could not remove download status: %v", err)
 	}
@@ -187,7 +210,7 @@ func sendResult(session *discordgo.Session, message *discordgo.Message, result d
 		for index, item := range result.Items[start:end] {
 			name := strings.TrimSpace(item.Name)
 			if name == "" {
-				name = fmt.Sprintf("media-%02d", start+index+1)
+				name = resources.Format("discord_media_filename", map[string]any{"index": fmt.Sprintf("%02d", start+index+1)})
 			}
 			files = append(files, &discordgo.File{
 				Name: name, ContentType: item.MIME, Reader: bytes.NewReader(item.Data),
@@ -274,24 +297,29 @@ func (b *Bot) statsText() string {
 	if total > 0 {
 		errorRate = float64(errorsCount) / float64(total) * 100
 	}
-	return fmt.Sprintf(
-		"Статистика Discord\nАптайм: %s\nКаналы: %d\nСообщения: %d\nКоманды: %d\nМедиа: %d (успешно: %d, ошибок: %d, %.1f%%)",
-		time.Since(b.startedAt).Round(time.Second), channels, b.messages.Load(), b.commands.Load(),
-		total, total-errorsCount, errorsCount, errorRate,
-	)
+	return resources.Format("discord_stats", map[string]any{
+		"uptime":        time.Since(b.startedAt).Round(time.Second),
+		"channels":      channels,
+		"messages":      b.messages.Load(),
+		"commands":      b.commands.Load(),
+		"media_total":   total,
+		"media_success": total - errorsCount,
+		"media_errors":  errorsCount,
+		"error_rate":    fmt.Sprintf("%.1f", errorRate),
+	})
 }
 
 func downloadErrorText(err error) string {
 	text := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(text, "too large") || strings.Contains(text, "exceeds"):
-		return "Файл слишком большой. Увеличь `MAX_FILE_SIZE`, если лимит Discord-сервера это позволяет."
+		return resources.Get("discord_download_too_large")
 	case strings.Contains(text, "404") || strings.Contains(text, "not found"):
-		return "Публикация не найдена или уже удалена."
+		return resources.Get("discord_download_not_found")
 	case strings.Contains(text, "timeout") || strings.Contains(text, "deadline"):
-		return "Источник отвечает слишком долго. Попробуй ещё раз чуть позже."
+		return resources.Get("discord_download_timeout")
 	default:
-		return "Не получилось скачать медиа. Возможно, публикация приватная или источник временно недоступен."
+		return resources.Get("discord_download_failed")
 	}
 }
 

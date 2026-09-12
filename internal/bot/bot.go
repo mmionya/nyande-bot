@@ -217,7 +217,7 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	}
 }
 
-func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) error {
+func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err error) {
 	b.saveChatMessage(ctx, message)
 	b.state.MessagesTotal.Add(1)
 	b.state.TrackChat(message.Chat.ID)
@@ -234,6 +234,11 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) erro
 
 	text := strings.TrimSpace(message.ContentText())
 	if command, arguments, ok := parseCommand(text); ok {
+		started := time.Now()
+		log.Printf("[command] started platform=telegram chat=%d user=%d msg=%d command=%q", message.Chat.ID, userID(message), message.MessageID, command)
+		defer func() {
+			log.Printf("[command] finished platform=telegram chat=%d user=%d msg=%d command=%q failed=%t elapsed_ms=%d", message.Chat.ID, userID(message), message.MessageID, command, err != nil, time.Since(started).Milliseconds())
+		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
 		case "start":
@@ -289,6 +294,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) erro
 		case "mediainfo":
 			return b.mediainfoCommand(ctx, message)
 		default:
+			log.Printf("[command] unknown platform=telegram chat=%d msg=%d command=%q", message.Chat.ID, message.MessageID, command)
 			return nil
 		}
 	}

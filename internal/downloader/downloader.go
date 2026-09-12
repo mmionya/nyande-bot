@@ -221,7 +221,22 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	if referer != "" {
 		request.Header.Set("Referer", referer)
 	}
-	response, err := d.client.Do(request)
+	// Check redirect destinations before connecting, not just after receiving
+	// their response: media links may originate in untrusted search results.
+	client := *d.client
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if !isPublicURL(next.URL) {
+			return errors.New("media redirected to a non-public address")
+		}
+		if d.client.CheckRedirect != nil {
+			return d.client.CheckRedirect(next, via)
+		}
+		if len(via) >= 6 {
+			return errors.New("too many redirects")
+		}
+		return nil
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return Media{}, err
 	}
@@ -310,7 +325,7 @@ func isPublicURL(value *url.URL) bool {
 		return false
 	}
 	for _, address := range addresses {
-		if address.IsLoopback() || address.IsPrivate() || address.IsUnspecified() || address.IsMulticast() {
+		if address.IsLoopback() || address.IsPrivate() || address.IsUnspecified() || address.IsMulticast() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() {
 			return false
 		}
 	}

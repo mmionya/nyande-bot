@@ -21,8 +21,8 @@ type Page struct {
 }
 
 var (
-	titlePattern   = regexp.MustCompile(`(?i)<title[^>]*>([\s\S]*?)</title>`)
-	stripPatterns  = []*regexp.Regexp{
+	titlePattern  = regexp.MustCompile(`(?i)<title[^>]*>([\s\S]*?)</title>`)
+	stripPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`(?is)<script[^>]*>[\s\S]*?</script>`),
 		regexp.MustCompile(`(?is)<style[^>]*>[\s\S]*?</style>`),
 		regexp.MustCompile(`(?is)<noscript[^>]*>[\s\S]*?</noscript>`),

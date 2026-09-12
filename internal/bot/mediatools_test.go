@@ -148,7 +148,7 @@ func TestParseDelaySeconds(t *testing.T) {
 		{" 120 ", 120, false},
 		{"10m", 600, false},
 		{"1h", 3600, false},
-		{"2s", 0, true},           // < 5s
+		{"2s", 0, true}, // < 5s
 		{"-5", 0, true},
 		{"", 0, true},
 		{"invalid", 0, true},

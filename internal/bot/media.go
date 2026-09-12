@@ -17,23 +17,41 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/downloader"
 	"github.com/mmionya/nyande-bot/internal/llm"
+	"github.com/mmionya/nyande-bot/internal/logutil"
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (b *Bot) handleMediaURL(ctx context.Context, message *telegram.Message, mediaURL string) error {
+	_, err := b.downloadAndSendMedia(ctx, message, mediaURL)
+	return err
+}
+
+// Return confirmed deliveries so application tools can report failures and
+// partial sends accurately instead of treating a displayed error as success.
+func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Message, mediaURL string) ([]telegram.Message, error) {
+	started := time.Now()
+	log.Printf("[media] download_started platform=telegram chat=%d user=%d msg=%d url=%q", message.Chat.ID, userID(message), message.MessageID, logutil.URL(mediaURL))
 	b.state.MediaTotal.Add(1)
 	status, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("downloader.status.downloading"), message.MessageID, nil)
 	if err != nil {
-		return err
+		log.Printf("[media] status_failed platform=telegram chat=%d msg=%d elapsed_ms=%d", message.Chat.ID, message.MessageID, time.Since(started).Milliseconds())
+		return nil, err
 	}
 	result, err := b.downloader.Download(ctx, mediaURL)
+	if err == nil && len(result.Items) == 0 {
+		err = errors.New("downloader returned no media")
+	}
 	if err != nil {
 		b.state.MediaErrors.Add(1)
-		log.Printf("[media] %s failed: %v", mediaURL, err)
+		log.Printf("[media] download_failed platform=telegram chat=%d msg=%d url=%q elapsed_ms=%d: %v", message.Chat.ID, message.MessageID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
 		_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID,
 			resources.Format("downloader.error.failed", map[string]any{"error": humanDownloadError(mediaURL, err)}), nil)
-		return nil
+		return nil, err
+	}
+	log.Printf("[media] downloaded platform=telegram chat=%d msg=%d source=%q items=%d elapsed_ms=%d", message.Chat.ID, message.MessageID, result.Source, len(result.Items), time.Since(started).Milliseconds())
+	for index, item := range result.Items {
+		log.Printf("[media] file platform=telegram chat=%d msg=%d index=%d kind=%q name=%q bytes=%d", message.Chat.ID, message.MessageID, index+1, item.Kind, item.Name, len(item.Data))
 	}
 	switch result.Source {
 	case "tiktok":
@@ -55,26 +73,29 @@ func (b *Bot) handleMediaURL(ctx context.Context, message *telegram.Message, med
 	lock := b.state.ChatLock(message.Chat.ID)
 	lock.Lock()
 	defer lock.Unlock()
+	sendStarted := time.Now()
+	log.Printf("[media] send_started platform=telegram chat=%d msg=%d items=%d", message.Chat.ID, message.MessageID, len(result.Items))
 	_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID, resources.Get("downloader.status.sending"), nil)
 	sent, sendErr := b.sendDownloadedMedia(ctx, message, result)
-	if sendErr != nil {
-		b.state.MediaErrors.Add(1)
-		log.Printf("[media] Telegram send failed: %v", sendErr)
-		_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID,
-			resources.Get("downloader.error.telegram_send"), nil)
-		return nil
-	}
-	_ = b.telegram.DeleteMessage(ctx, message.Chat.ID, status.MessageID)
 	if len(sent) > 0 {
-		attachments := make([]cachedAttachment, 0, len(result.Items))
-		for _, item := range result.Items {
+		attachments := make([]cachedAttachment, 0, len(sent))
+		for _, item := range result.Items[:min(len(sent), len(result.Items))] {
 			attachments = append(attachments, cachedAttachment{
 				Kind: item.Kind, Name: item.Name, MIME: item.MIME, Data: item.Data,
 			})
 		}
 		b.media.Put(message.Chat.ID, sent, attachments)
 	}
-	return nil
+	if sendErr != nil {
+		b.state.MediaErrors.Add(1)
+		log.Printf("[media] send_failed platform=telegram chat=%d msg=%d sent=%d expected=%d elapsed_ms=%d: %v", message.Chat.ID, message.MessageID, len(sent), len(result.Items), time.Since(sendStarted).Milliseconds(), sendErr)
+		_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID,
+			resources.Get("downloader.error.telegram_send"), nil)
+		return sent, sendErr
+	}
+	_ = b.telegram.DeleteMessage(ctx, message.Chat.ID, status.MessageID)
+	log.Printf("[media] sent platform=telegram chat=%d msg=%d items=%d send_ms=%d total_ms=%d", message.Chat.ID, message.MessageID, len(sent), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
+	return sent, nil
 }
 
 func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message, result downloader.Result) ([]telegram.Message, error) {
@@ -106,7 +127,7 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 				start = end
 				continue
 			}
-			log.Printf("[media] album failed, falling back to individual sends: %v", err)
+			log.Printf("[media] album_fallback platform=telegram chat=%d msg=%d items=%d: %v", message.Chat.ID, message.MessageID, len(chunk), err)
 		}
 		upload := uploads[start]
 		sentMessage, err := b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
@@ -229,7 +250,8 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	if message.From != nil {
 		userName = message.From.FirstName
 	}
-	tools := []llm.Tool{b.tomatoTool(message)}
+	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message)}
+	tools = append(tools, b.llm.MediaSearchTools()...)
 	tools = append(tools, b.memoryTools(message)...)
 	tools = append(tools, b.chatlogTools(message)...)
 	tools = append(tools, b.reminderTools(message)...)
