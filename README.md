@@ -177,6 +177,17 @@ Group administrators can use `/linkdelete on` or `/linkdelete off` to control
 whether unsupported links are deleted. The setting is stored in
 `LINK_MODERATION_FILE` and is disabled by default.
 
+
+For permanent silent moderation, a group administrator sends a standalone `blahaj`
+message (without a slash). The bot silently enables deletion of all links and
+stops replying, calling the LLM, downloading media, handling commands or buttons,
+and sending reminders. Edited messages and media captions are checked too.
+Administrators remain exempt. Links to supported sites and allowlisted sites are
+deleted too.
+This mode is per group, persists in `LINK_MODERATION_FILE` across restarts, and
+cannot be disabled through the bot, including `/linkdelete off` or another `blahaj`.
+The bot needs permission to delete messages.
+
 ## Bot commands
 
 | Command | Description |

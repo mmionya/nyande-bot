@@ -43,6 +43,7 @@ type Bot struct {
 	reminders  *reminders.Store
 	quotes     *quotes.Store
 
+	updateLocks     sync.Map
 	adminMu         sync.Mutex
 	adminCache      map[adminKey]adminEntry
 	tttMu           sync.Mutex
@@ -202,7 +203,22 @@ func (b *Bot) Run(ctx context.Context) error {
 }
 
 func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
+	var chatID int64
+	switch {
+	case update.Message != nil:
+		chatID = update.Message.Chat.ID
+	case update.EditedMessage != nil:
+		chatID = update.EditedMessage.Chat.ID
+	case update.CallbackQuery != nil && update.CallbackQuery.Message != nil:
+		chatID = update.CallbackQuery.Message.Chat.ID
+	}
+	unlock := b.lockUpdates(chatID)
+	defer unlock()
+
 	if update.EditedMessage != nil {
+		if b.silentModeration(update.EditedMessage.Chat.ID) {
+			return b.handleLinks(ctx, update.EditedMessage, extractURLs(update.EditedMessage))
+		}
 		b.saveChatMessage(ctx, update.EditedMessage)
 	}
 	switch {
@@ -218,6 +234,24 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 }
 
 func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err error) {
+	if message.Chat.Type == "group" || message.Chat.Type == "supergroup" {
+		if b.silentModeration(message.Chat.ID) {
+			return b.handleLinks(ctx, message, extractURLs(message))
+		}
+		if strings.TrimSpace(message.ContentText()) == "blahaj" {
+			admin, err := b.isAdmin(ctx, message)
+			if err != nil {
+				return err
+			}
+			if !admin {
+				return nil
+			}
+			if b.linkConfig == nil {
+				return errors.New("link deletion settings are unavailable")
+			}
+			return b.linkConfig.EnableSilent(message.Chat.ID)
+		}
+	}
 	b.saveChatMessage(ctx, message)
 	b.state.MessagesTotal.Add(1)
 	b.state.TrackChat(message.Chat.ID)
@@ -331,7 +365,7 @@ func parseCommand(text string) (string, string, bool) {
 func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls []string) error {
 	forbidden := false
 	for _, value := range urls {
-		if !downloader.AllowedHost(value) && !b.allowlist.Allows(value) {
+		if b.silentModeration(message.Chat.ID) || (!downloader.AllowedHost(value) && !b.allowlist.Allows(value)) {
 			forbidden = true
 			break
 		}
@@ -348,7 +382,12 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 		if err := b.telegram.DeleteMessage(ctx, message.Chat.ID, message.MessageID); err != nil {
 			return err
 		}
-		_, _ = b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.unsupported"), 0, nil)
+		if !b.silentModeration(message.Chat.ID) {
+			_, _ = b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.unsupported"), 0, nil)
+		}
+		return nil
+	}
+	if b.silentModeration(message.Chat.ID) {
 		return nil
 	}
 	supported := supportedURLs(urls)
@@ -389,6 +428,9 @@ func (b *Bot) addAllowedLink(ctx context.Context, message *telegram.Message, arg
 }
 
 func (b *Bot) handleCallback(ctx context.Context, callback *telegram.CallbackQuery) error {
+	if callback.Message != nil && b.silentModeration(callback.Message.Chat.ID) {
+		return nil
+	}
 	switch {
 	case strings.HasPrefix(callback.Data, "donate:"):
 		return b.handleDonationCallback(ctx, callback)
@@ -528,30 +570,50 @@ func (b *Bot) reminderLoop(ctx context.Context) {
 				continue
 			}
 			for _, r := range due {
-				userTag := r.UserName
-				if userTag == "" {
-					userTag = "друг"
-				}
-				text := fmt.Sprintf("⏰ **Напоминание для %s**:\n%s", userTag, r.Text)
-				_, sendErr := b.telegram.SendMessage(ctx, r.ChatID, text, r.MessageID, nil)
-				if sendErr != nil {
-					log.Printf("[reminders] send reminder %d failed: %v", r.ID, sendErr)
-					errText := strings.ToLower(sendErr.Error())
-					isPermanent := strings.Contains(errText, "kicked") ||
-						strings.Contains(errText, "blocked") ||
-						strings.Contains(errText, "not found") ||
-						strings.Contains(errText, "deactivated") ||
-						strings.Contains(errText, "migrated") ||
-						time.Since(r.TriggerAt) > 5*time.Minute
-					if !isPermanent {
-						continue
-					}
-				}
-				if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
-					log.Printf("[reminders] mark completed %d failed: %v", r.ID, err)
-				}
+				b.deliverReminder(ctx, r)
 			}
 		}
+	}
+}
+
+// Serialize activation with updates and scheduled sends in the same chat.
+func (b *Bot) lockUpdates(chatID int64) func() {
+	value, _ := b.updateLocks.LoadOrStore(chatID, &sync.Mutex{})
+	lock := value.(*sync.Mutex)
+	lock.Lock()
+	return lock.Unlock
+}
+
+func (b *Bot) deliverReminder(ctx context.Context, r reminders.Reminder) {
+	unlock := b.lockUpdates(r.ChatID)
+	defer unlock()
+	if b.silentModeration(r.ChatID) {
+		if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
+			log.Printf("[reminders] discard silent-chat reminder %d: %v", r.ID, err)
+		}
+		return
+	}
+	userTag := r.UserName
+	if userTag == "" {
+		userTag = "друг"
+	}
+	text := fmt.Sprintf("⏰ **Напоминание для %s**:\n%s", userTag, r.Text)
+	_, sendErr := b.telegram.SendMessage(ctx, r.ChatID, text, r.MessageID, nil)
+	if sendErr != nil {
+		log.Printf("[reminders] send reminder %d failed: %v", r.ID, sendErr)
+		errText := strings.ToLower(sendErr.Error())
+		isPermanent := strings.Contains(errText, "kicked") ||
+			strings.Contains(errText, "blocked") ||
+			strings.Contains(errText, "not found") ||
+			strings.Contains(errText, "deactivated") ||
+			strings.Contains(errText, "migrated") ||
+			time.Since(r.TriggerAt) > 5*time.Minute
+		if !isPermanent {
+			return
+		}
+	}
+	if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
+		log.Printf("[reminders] mark completed %d failed: %v", r.ID, err)
 	}
 }
 

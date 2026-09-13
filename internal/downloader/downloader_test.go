@@ -154,3 +154,24 @@ func containsAdjacent(values []string, first, second string) bool {
 	}
 	return false
 }
+
+func TestFilenameFromURLAddsMissingMediaExtension(t *testing.T) {
+	for _, tc := range []struct{ name, path, mime, want string }{
+		{"extensionless CDN video", "/video/tos/oYBZJKBER", "video/mp4", "oYBZJKBER.mp4"},
+		{"MP4 with parameters", "/opaque-id", "video/mp4; charset=binary", "opaque-id.mp4"},
+		{"empty path", "", "video/mp4", "media.mp4"},
+		{"root path", "/", "video/mp4", "media.mp4"},
+		{"existing extension", "/clip.mp4", "video/mp4", "clip.mp4"},
+		{"preserve existing video format", "/clip.webm", "video/webm", "clip.webm"},
+		{"extensionless WebM", "/clip", "video/webm", "clip.webm"},
+		{"extensionless image", "/photo", "image/png", "photo.png"},
+		{"unknown type", "/download", "application/x-nyande-unknown", "download.bin"},
+		{"long name", "/" + strings.Repeat("v", 150), "video/mp4", strings.Repeat("v", 100) + ".mp4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := filenameFromURL(&url.URL{Path: tc.path}, tc.mime); got != tc.want {
+				t.Fatalf("filenameFromURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

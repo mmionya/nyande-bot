@@ -301,12 +301,20 @@ func kindFromExtension(value string) string {
 func filenameFromURL(value *url.URL, contentType string) string {
 	name := path.Base(value.Path)
 	if name == "" || name == "." || name == "/" {
+		name = "media"
+	}
+	if path.Ext(name) == "" {
 		extensions, _ := mime.ExtensionsByType(contentType)
 		extension := ".bin"
-		if len(extensions) > 0 {
+		// MP4 has multiple registered extensions; use the conventional one
+		// so attachment clients can recognize it as a playable video.
+		mediaType, _, _ := mime.ParseMediaType(contentType)
+		if mediaType == "video/mp4" {
+			extension = ".mp4"
+		} else if len(extensions) > 0 {
 			extension = extensions[0]
 		}
-		return "media" + extension
+		name += extension
 	}
 	if len(name) > 120 {
 		extension := path.Ext(name)
