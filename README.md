@@ -38,7 +38,7 @@ to the final card.
 
 ## Technology
 
-- Go 1.24 — Telegram and Discord bots, downloaders, and LLM client;
+- Go 1.25+ — Telegram and Discord bots, downloaders, and LLM client;
 - `yt-dlp`, Deno, FFmpeg, and FFprobe — YouTube challenge solving, media
   processing, and downloader fallbacks;
 - optional OpenAI Whisper CLI — local audio and video transcription;
@@ -178,15 +178,16 @@ whether unsupported links are deleted. The setting is stored in
 `LINK_MODERATION_FILE` and is disabled by default.
 
 
-For permanent silent moderation, a group administrator sends a standalone `blahaj`
+For permanent silent moderation, a group administrator sends a standalone `blahajblahajblahaj`
 message (without a slash). The bot silently enables deletion of all links and
 stops replying, calling the LLM, downloading media, handling commands or buttons,
 and sending reminders. Edited messages and media captions are checked too.
 Administrators remain exempt. Links to supported sites and allowlisted sites are
 deleted too.
 This mode is per group, persists in `LINK_MODERATION_FILE` across restarts, and
-cannot be disabled through the bot, including `/linkdelete off` or another `blahaj`.
-The bot needs permission to delete messages.
+cannot be disabled through the bot, including `/linkdelete off` or another `blahajblahajblahaj`.
+The bot needs permission to delete messages. Successful activation is logged as
+`[moderation] silent_enabled` with the chat, user, and message IDs.
 
 ## Bot commands
 
@@ -287,3 +288,7 @@ events; the download URL field omits credentials, query parameters and fragments
 `[media] sent` or `[media] send_failed`.
 
 TikTok requests can use `search_tiktok` when web search is enabled. It keeps only unique individual video URLs, using OpenRouter search citations with a scoped DuckDuckGo fallback. `download_media` can then download and send a selected result. This searches indexed pages; freshness, popularity and download availability are not guaranteed. Hosted search adds an LLM request; no new API keys are required.
+
+Use `!llm off` / `!llm on` to disable or enable the LLM across a Discord server (Manage Server or Administrator permission required), or for your DM conversation. `!llm` shows the status. Media downloads remain available. Settings persist in `DISCORD_LLM_SETTINGS_FILE` across restarts. Commands use `DISCORD_COMMAND_PREFIX`; enabling requires the LLM to be enabled in the bot configuration.
+
+[Discord voice music: commands and setup](docs/discord-music.md).

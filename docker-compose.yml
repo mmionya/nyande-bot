@@ -12,6 +12,9 @@ services:
     environment:
       ALLOWED_LINKS_FILE: /app/data/allowed-links.json
       LINK_MODERATION_FILE: /app/data/link-moderation.json
+      LAVALINK_ADDRESS: ${LAVALINK_ADDRESS:-lavalink:2333}
+      LAVALINK_PASSWORD: ${LAVALINK_PASSWORD:-youshallnotpass}
+      DISCORD_LLM_SETTINGS_FILE: /app/data/discord-llm.json
       LLM_HISTORY_FILE: /app/data/llm-history.json
       LLM_MEMORY_FILE: /app/data/llm-memory.db
       CHAT_LOG_FILE: /app/data/chatlog.db
@@ -24,3 +27,15 @@ services:
       resources:
         limits:
           memory: 2G
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4.2.2
+    profiles: [music]
+    restart: unless-stopped
+    environment:
+      LAVALINK_SERVER_PASSWORD: ${LAVALINK_PASSWORD:-youshallnotpass}
+      _JAVA_OPTIONS: -Xmx512M
+    ports:
+      - "127.0.0.1:2333:2333"
+    volumes:
+      - ./resources/lavalink.yml:/opt/Lavalink/application.yml:ro

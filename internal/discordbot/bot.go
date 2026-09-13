@@ -30,7 +30,10 @@ const (
 var discordURLPattern = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"']+`)
 
 type Bot struct {
+	musicMu       sync.Mutex
+	music         *musicService
 	llm           languageModel
+	llmSettings   *llmSettings
 	conversations sync.Map
 	cfg           config.Config
 	session       *discordgo.Session
@@ -53,21 +56,27 @@ func New(cfg config.Config) (*Bot, error) {
 	if strings.TrimSpace(cfg.DiscordToken) == "" {
 		return nil, errors.New("DISCORD_BOT_TOKEN is empty")
 	}
+	settings, err := loadLLMSettings(cfg.DiscordLLMSettingsFile)
+	if err != nil {
+		return nil, fmt.Errorf("load Discord LLM settings: %w", err)
+	}
 	session, err := discordgo.New("Bot " + strings.TrimSpace(cfg.DiscordToken))
 	if err != nil {
 		return nil, fmt.Errorf("create Discord session: %w", err)
 	}
-	session.Identify.Intents = discordgo.IntentsGuildMessages |
+	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildVoiceStates | discordgo.IntentsGuildMessages |
 		discordgo.IntentsDirectMessages |
 		discordgo.IntentsMessageContent
 
 	result := &Bot{
-		cfg: cfg, session: session, downloader: downloader.New(cfg),
+		cfg: cfg, session: session, llmSettings: settings, downloader: downloader.New(cfg),
 		llm:       llm.New(discordLLMConfig(cfg)),
 		semaphore: make(chan struct{}, 8), startedAt: time.Now(),
 		uniqueChannels: make(map[string]struct{}),
 	}
 	session.AddHandler(result.handleMessageCreate)
+	session.AddHandler(result.handleMusicVoiceState)
+	session.AddHandler(result.handleMusicVoiceServer)
 	return result, nil
 }
 
@@ -93,6 +102,11 @@ func (b *Bot) Run(ctx context.Context) error {
 }
 
 func (b *Bot) Close() error {
+	b.musicMu.Lock()
+	if b.music != nil {
+		b.music.close()
+	}
+	b.musicMu.Unlock()
 	return b.session.Close()
 }
 
@@ -138,11 +152,15 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 	log.Printf("[command] started platform=discord chat=%s user=%s msg=%s command=%q", message.ChannelID, author, message.ID, command)
 	var response string
 	switch command {
+	case "play", "search", "queue", "skip", "pause", "resume", "stop", "leave":
+		response = b.musicCommand(session, message, command)
 	case "gif":
 		b.commands.Add(1)
 		err := b.handleGIF(session, message)
 		log.Printf("[command] finished platform=discord chat=%s user=%s msg=%s command=%q failed=%t elapsed_ms=%d", message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
 		return true
+	case "llm":
+		response = b.configureLLM(session, message)
 	case "reset":
 		response = b.resetLLM(message)
 	case "help":

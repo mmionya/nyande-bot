@@ -238,7 +238,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		if b.silentModeration(message.Chat.ID) {
 			return b.handleLinks(ctx, message, extractURLs(message))
 		}
-		if strings.TrimSpace(message.ContentText()) == "blahaj" {
+		if strings.TrimSpace(message.ContentText()) == "blahajblahajblahaj" {
 			admin, err := b.isAdmin(ctx, message)
 			if err != nil {
 				return err
@@ -249,7 +249,11 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			if b.linkConfig == nil {
 				return errors.New("link deletion settings are unavailable")
 			}
-			return b.linkConfig.EnableSilent(message.Chat.ID)
+			if err := b.linkConfig.EnableSilent(message.Chat.ID); err != nil {
+				return err
+			}
+			log.Printf("[moderation] silent_enabled platform=telegram chat=%d user=%d msg=%d", message.Chat.ID, userID(message), message.MessageID)
+			return nil
 		}
 	}
 	b.saveChatMessage(ctx, message)

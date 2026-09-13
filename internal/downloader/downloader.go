@@ -309,10 +309,17 @@ func filenameFromURL(value *url.URL, contentType string) string {
 		// MP4 has multiple registered extensions; use the conventional one
 		// so attachment clients can recognize it as a playable video.
 		mediaType, _, _ := mime.ParseMediaType(contentType)
-		if mediaType == "video/mp4" {
+		switch mediaType {
+		case "video/mp4":
 			extension = ".mp4"
-		} else if len(extensions) > 0 {
-			extension = extensions[0]
+		case "video/webm":
+			extension = ".webm"
+		case "video/quicktime":
+			extension = ".mov"
+		default:
+			if len(extensions) > 0 {
+				extension = extensions[0]
+			}
 		}
 		name += extension
 	}

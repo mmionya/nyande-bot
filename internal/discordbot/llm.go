@@ -39,7 +39,7 @@ func (b *Bot) conversation(channelID string) *conversation {
 }
 
 func (b *Bot) shouldAnswerLLM(session *discordgo.Session, message *discordgo.Message) bool {
-	if b.llm == nil || !b.llm.Enabled() || strings.TrimSpace(message.Content) == "" {
+	if b.llm == nil || !b.llm.Enabled() || b.llmSettings.isDisabled(llmScope(message)) || strings.TrimSpace(message.Content) == "" {
 		return false
 	}
 	if _, command := parseCommand(message.Content, b.cfg.DiscordPrefix); command {
@@ -71,6 +71,14 @@ func (b *Bot) shouldAnswerLLM(session *discordgo.Session, message *discordgo.Mes
 func (b *Bot) handleLLM(session *discordgo.Session, message *discordgo.Message) {
 	if !b.shouldAnswerLLM(session, message) {
 		return
+	}
+	// Finish in-flight replies before acknowledging a settings change.
+	if b.llmSettings != nil {
+		b.llmSettings.mu.RLock()
+		defer b.llmSettings.mu.RUnlock()
+		if b.llmSettings.disabled[llmScope(message)] {
+			return
+		}
 	}
 	chatID, err := strconv.ParseInt(message.ChannelID, 10, 64)
 	if err != nil {

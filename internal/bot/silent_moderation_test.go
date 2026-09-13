@@ -100,14 +100,14 @@ func TestSilentModerationUpdates(t *testing.T) {
 		return &telegram.Message{MessageID: 10, Chat: telegram.Chat{ID: -1, Type: "supergroup"}, From: &telegram.User{ID: author}, Text: text}
 	}
 	for _, author := range []int64{2, 1} {
-		if err := b.HandleUpdate(ctx, telegram.Update{Message: message("blahaj", author)}); err != nil {
+		if err := b.HandleUpdate(ctx, telegram.Update{Message: message("blahajblahajblahaj", author)}); err != nil {
 			t.Fatal(err)
 		}
 		if s.Silent(-1) != (author == 1) {
 			t.Fatal("incorrect activation permissions")
 		}
 	}
-	for _, text := range []string{"blahaj", "/linkdelete off", "/ping", "/reset", "hello", "https://youtube.com/watch?v=abc", "https://allowed.example/page"} {
+	for _, text := range []string{"blahajblahajblahaj", "/linkdelete off", "/ping", "/reset", "hello", "https://youtube.com/watch?v=abc", "https://allowed.example/page"} {
 		if err := b.HandleUpdate(ctx, telegram.Update{Message: message(text, 2)}); err != nil {
 			t.Fatal(err)
 		}

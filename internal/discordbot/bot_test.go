@@ -21,7 +21,7 @@ func TestNewConfiguresRequiredGatewayIntents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
+	want := discordgo.IntentsGuilds | discordgo.IntentsGuildVoiceStates | discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
 	if instance.session.Identify.Intents != want {
 		t.Fatalf("gateway intents = %d, want %d", instance.session.Identify.Intents, want)
 	}
