@@ -49,3 +49,24 @@ func TestLoadRequiresAtLeastOneBotToken(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
+
+func TestDirectMusicDefaults(t *testing.T) {
+	t.Setenv("DISCORD_BOT_TOKEN", "test")
+	t.Setenv("LLM_ENABLED", "false")
+	t.Setenv("DISCORD_MUSIC_BACKEND", "")
+	t.Setenv("MUSIC_MAX_PLAYERS", "")
+	t.Setenv("FFMPEG_PATH", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MusicBackend != "direct" || cfg.MusicMaxPlayers != 1 || cfg.FFmpegPath != "ffmpeg" {
+		t.Fatal("wrong direct music defaults")
+	}
+	t.Setenv("MUSIC_MAX_PLAYERS", "3")
+	t.Setenv("FFMPEG_PATH", "/opt/media/ffmpeg")
+	cfg, err = Load()
+	if err != nil || cfg.MusicMaxPlayers != 3 || cfg.FFmpegPath != "/opt/media/ffmpeg" {
+		t.Fatal("music configuration override failed", err)
+	}
+}

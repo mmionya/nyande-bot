@@ -30,6 +30,7 @@ const (
 var discordURLPattern = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"']+`)
 
 type Bot struct {
+	musicUI       musicUIState
 	musicMu       sync.Mutex
 	music         *musicService
 	llm           languageModel
@@ -77,6 +78,7 @@ func New(cfg config.Config) (*Bot, error) {
 	session.AddHandler(result.handleMessageCreate)
 	session.AddHandler(result.handleMusicVoiceState)
 	session.AddHandler(result.handleMusicVoiceServer)
+	session.AddHandler(result.handleMusicInteraction)
 	return result, nil
 }
 
@@ -97,6 +99,10 @@ func (b *Bot) Run(ctx context.Context) error {
 		log.Printf("[discord] could not update status: %v", err)
 	}
 
+	if err := b.registerMusicCommands(); err != nil {
+		log.Printf("[music] slash command registration failed: %v", err)
+	}
+	go b.musicPanelLoop(ctx)
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -152,7 +158,7 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 	log.Printf("[command] started platform=discord chat=%s user=%s msg=%s command=%q", message.ChannelID, author, message.ID, command)
 	var response string
 	switch command {
-	case "play", "search", "queue", "skip", "pause", "resume", "stop", "leave":
+	case "play", "search", "queue", "skip", "pause", "resume", "stop", "leave", "clear", "shuffle", "move", "repeat", "volume":
 		response = b.musicCommand(session, message, command)
 	case "gif":
 		b.commands.Add(1)

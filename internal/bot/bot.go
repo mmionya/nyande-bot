@@ -150,6 +150,8 @@ func (b *Bot) Run(ctx context.Context) error {
 	commands := []map[string]string{
 		{"command": "help", "description": "возможности бота"},
 		{"command": "linkdelete", "description": "удаление неподдерживаемых ссылок"},
+		{"command": "permitlinks", "description": "разрешить участнику ссылки в тихом режиме"},
+		{"command": "revokelinks", "description": "отозвать разрешение на ссылки в тихом режиме"},
 		{"command": "ttt", "description": "крестики-нолики в чате"},
 		{"command": "checkers", "description": "шашки в чате"},
 		{"command": "wordle", "description": "английское слово дня в чате"},
@@ -236,6 +238,12 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err error) {
 	if message.Chat.Type == "group" || message.Chat.Type == "supergroup" {
 		if b.silentModeration(message.Chat.ID) {
+			if message.IsAutomaticForward {
+				return nil
+			}
+			if handled, err := b.handleLinkPermissionCommand(ctx, message); handled {
+				return err
+			}
 			return b.handleLinks(ctx, message, extractURLs(message))
 		}
 		if strings.TrimSpace(message.ContentText()) == "blahajblahajblahaj" {
@@ -367,6 +375,16 @@ func parseCommand(text string) (string, string, bool) {
 }
 
 func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls []string) error {
+	if b.silentModeration(message.Chat.ID) {
+		// This Telegram flag identifies posts from the linked discussion channel;
+		// ordinary forwards and comments do not inherit the exemption.
+		if message.IsAutomaticForward {
+			return nil
+		}
+		if message.SenderChat == nil && message.From != nil && b.linkConfig.UserPermitted(message.Chat.ID, message.From.ID) {
+			return nil
+		}
+	}
 	forbidden := false
 	for _, value := range urls {
 		if b.silentModeration(message.Chat.ID) || (!downloader.AllowedHost(value) && !b.allowlist.Allows(value)) {

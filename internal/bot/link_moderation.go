@@ -10,14 +10,21 @@ import (
 )
 
 type linkDeletionSettings struct {
-	mu           sync.RWMutex
-	path         string
-	enabledChats map[int64]struct{}
-	silentChats  map[int64]struct{}
+	mu             sync.RWMutex
+	path           string
+	enabledChats   map[int64]struct{}
+	silentChats    map[int64]struct{}
+	permittedUsers map[int64]map[int64]struct{}
+}
+
+type storedLinkDeletionSettings struct {
+	EnabledChats   []int64           `json:"enabled_chats"`
+	SilentChats    []int64           `json:"silent_chats,omitempty"`
+	PermittedUsers map[int64][]int64 `json:"permitted_users,omitempty"`
 }
 
 func loadLinkDeletionSettings(path string) (*linkDeletionSettings, error) {
-	settings := &linkDeletionSettings{path: path, enabledChats: make(map[int64]struct{}), silentChats: make(map[int64]struct{})}
+	settings := &linkDeletionSettings{path: path, enabledChats: make(map[int64]struct{}), silentChats: make(map[int64]struct{}), permittedUsers: make(map[int64]map[int64]struct{})}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -25,10 +32,7 @@ func loadLinkDeletionSettings(path string) (*linkDeletionSettings, error) {
 		}
 		return nil, err
 	}
-	var stored struct {
-		EnabledChats []int64 `json:"enabled_chats"`
-		SilentChats  []int64 `json:"silent_chats,omitempty"`
-	}
+	var stored storedLinkDeletionSettings
 	if err := json.Unmarshal(data, &stored); err != nil {
 		return nil, err
 	}
@@ -38,6 +42,20 @@ func loadLinkDeletionSettings(path string) (*linkDeletionSettings, error) {
 	for _, chatID := range stored.SilentChats {
 		settings.silentChats[chatID] = struct{}{}
 		settings.enabledChats[chatID] = struct{}{}
+	}
+	for chatID, users := range stored.PermittedUsers {
+		if _, silent := settings.silentChats[chatID]; !silent {
+			continue
+		}
+		for _, userID := range users {
+			if userID <= 0 {
+				continue
+			}
+			if settings.permittedUsers[chatID] == nil {
+				settings.permittedUsers[chatID] = make(map[int64]struct{})
+			}
+			settings.permittedUsers[chatID][userID] = struct{}{}
+		}
 	}
 	return settings, nil
 }
@@ -84,10 +102,14 @@ func (s *linkDeletionSettings) saveLocked() error {
 		silentIDs = append(silentIDs, id)
 	}
 	sort.Slice(silentIDs, func(i, j int) bool { return silentIDs[i] < silentIDs[j] })
-	data, err := json.MarshalIndent(struct {
-		EnabledChats []int64 `json:"enabled_chats"`
-		SilentChats  []int64 `json:"silent_chats,omitempty"`
-	}{chatIDs, silentIDs}, "", "  ")
+	users := make(map[int64][]int64)
+	for chatID, permitted := range s.permittedUsers {
+		for userID := range permitted {
+			users[chatID] = append(users[chatID], userID)
+		}
+		sort.Slice(users[chatID], func(i, j int) bool { return users[chatID][i] < users[chatID][j] })
+	}
+	data, err := json.MarshalIndent(storedLinkDeletionSettings{EnabledChats: chatIDs, SilentChats: silentIDs, PermittedUsers: users}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -129,4 +151,56 @@ func (s *linkDeletionSettings) EnableSilent(chatID int64) error {
 
 func (b *Bot) silentModeration(chatID int64) bool {
 	return b.linkConfig != nil && b.linkConfig.Silent(chatID)
+}
+
+func (s *linkDeletionSettings) UserPermitted(chatID, userID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, silent := s.silentChats[chatID]; !silent {
+		return false
+	}
+	_, permitted := s.permittedUsers[chatID][userID]
+	return permitted
+}
+
+func (s *linkDeletionSettings) SetUserPermission(chatID, userID int64, permitted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, silent := s.silentChats[chatID]; !silent {
+		return errors.New("link permissions require silent moderation")
+	}
+	if userID <= 0 {
+		return errors.New("link permission requires a user ID")
+	}
+	_, wasPermitted := s.permittedUsers[chatID][userID]
+	if wasPermitted == permitted {
+		return nil
+	}
+	if s.permittedUsers == nil {
+		s.permittedUsers = make(map[int64]map[int64]struct{})
+	}
+	if s.permittedUsers[chatID] == nil {
+		s.permittedUsers[chatID] = make(map[int64]struct{})
+	}
+	users := s.permittedUsers[chatID]
+	if permitted {
+		users[userID] = struct{}{}
+	} else {
+		delete(users, userID)
+	}
+	if err := s.saveLocked(); err != nil {
+		if wasPermitted {
+			users[userID] = struct{}{}
+		} else {
+			delete(users, userID)
+		}
+		if len(users) == 0 {
+			delete(s.permittedUsers, chatID)
+		}
+		return err
+	}
+	if len(users) == 0 {
+		delete(s.permittedUsers, chatID)
+	}
+	return nil
 }

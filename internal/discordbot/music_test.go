@@ -182,14 +182,20 @@ func TestMusicVoicePayloadIncludesDAVEChannel(t *testing.T) {
 }
 func TestMusicIdentifier(t *testing.T) {
 	for _, tc := range []struct{ input, want string }{
-		{"my song", "ytsearch:my song"}, {"sc: my song", "scsearch:my song"}, {"https://youtu.be/abc", "https://youtu.be/abc"},
+		{"my song", "ytsearch:my song"},
+		{"yt: my song", "ytsearch:my song"},
+		{"ytm: my song", "ytmsearch:my song"},
+		{"YTM: my song", "ytmsearch:my song"},
+		{"bc: my song", "bcsearch:my song"},
+		{"https://music.youtube.com/watch?v=abc", "https://music.youtube.com/watch?v=abc"},
+		{"https://artist.bandcamp.com/track/song", "https://artist.bandcamp.com/track/song"}, {"sc: my song", "scsearch:my song"}, {"https://youtu.be/abc", "https://youtu.be/abc"},
 	} {
 		got, err := musicIdentifier(tc.input)
 		if err != nil || got != tc.want {
 			t.Fatalf("%q => %q, %v", tc.input, got, err)
 		}
 	}
-	for _, input := range []string{"", "sc:", "file:///etc/passwd", "http://youtube.com/a", "https://127.0.0.1/a", "https://youtube.com.evil.example/a", "https://user@youtube.com/a", "https://youtube.com:123/a"} {
+	for _, input := range []string{"", "sc:", "ytm:  ", "bc:", "yt:", "https://bandcamp.com.evil.example/track/a", "https://bandcamp.com@evil.example/a", "file:///etc/passwd", "http://youtube.com/a", "https://127.0.0.1/a", "https://youtube.com.evil.example/a", "https://user@youtube.com/a", "https://youtube.com:123/a"} {
 		if _, err := musicIdentifier(input); err == nil {
 			t.Fatalf("accepted %q", input)
 		}

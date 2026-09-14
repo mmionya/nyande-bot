@@ -165,6 +165,11 @@ func (b *Bot) isAdmin(ctx context.Context, message *telegram.Message) (bool, err
 	if message.IsPrivate() {
 		return true, nil
 	}
+	if message.SenderChat != nil {
+		// Telegram represents anonymous group administrators as the group itself.
+		// Messages sent on behalf of other channels are not admin messages.
+		return (message.Chat.Type == "group" || message.Chat.Type == "supergroup") && message.SenderChat.ID == message.Chat.ID, nil
+	}
 	if message.From == nil {
 		return false, nil
 	}

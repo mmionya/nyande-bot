@@ -68,7 +68,7 @@ func TestMusicLavalinkHandshakeAndPayload(t *testing.T) {
 	defer server.Close()
 	session, _ := discordgo.New("Bot test")
 	session.State.User = &discordgo.User{ID: "99"}
-	b := &Bot{cfg: config.Config{LavalinkAddress: strings.TrimPrefix(server.URL, "http://"), LavalinkPassword: "test-password"}}
+	b := &Bot{cfg: config.Config{MusicBackend: "lavalink", LavalinkAddress: strings.TrimPrefix(server.URL, "http://"), LavalinkPassword: "test-password"}}
 	service, err := b.getMusic(session)
 	if err != nil {
 		t.Fatal(err)

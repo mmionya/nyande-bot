@@ -16,6 +16,9 @@ type Config struct {
 	DiscordToken           string
 	DiscordPrefix          string
 	DiscordLLMSettingsFile string
+	MusicBackend           string
+	MusicMaxPlayers        int
+	FFmpegPath             string
 	LavalinkAddress        string
 	LavalinkPassword       string
 	LavalinkSecure         bool
@@ -72,6 +75,9 @@ func Load() (Config, error) {
 		DiscordToken:           strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN")),
 		DiscordPrefix:          envString("DISCORD_COMMAND_PREFIX", "!"),
 		DiscordLLMSettingsFile: envString("DISCORD_LLM_SETTINGS_FILE", ".nyande-discord-llm.json"),
+		MusicBackend:           envString("DISCORD_MUSIC_BACKEND", "direct"),
+		MusicMaxPlayers:        envInt("MUSIC_MAX_PLAYERS", 1, 1, 10),
+		FFmpegPath:             envString("FFMPEG_PATH", "ffmpeg"),
 		LavalinkAddress:        strings.TrimSpace(os.Getenv("LAVALINK_ADDRESS")),
 		LavalinkPassword:       envString("LAVALINK_PASSWORD", "youshallnotpass"),
 		LavalinkSecure:         envBool("LAVALINK_SECURE", false),

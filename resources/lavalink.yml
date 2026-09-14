@@ -10,7 +10,7 @@ lavalink:
     sources:
       youtube: false
       soundcloud: true
-      bandcamp: false
+      bandcamp: true
       twitch: false
       vimeo: false
       nico: false
@@ -22,6 +22,11 @@ plugins:
   youtube:
     enabled: true
     allowSearch: true
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - WEB
+      - WEBEMBEDDED
     allowDirectVideoIds: true
     allowDirectPlaylistIds: false
 logging:

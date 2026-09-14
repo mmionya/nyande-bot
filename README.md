@@ -38,7 +38,7 @@ to the final card.
 
 ## Technology
 
-- Go 1.25+ — Telegram and Discord bots, downloaders, and LLM client;
+- Go 1.26+ — Telegram and Discord bots, downloaders, and LLM client;
 - `yt-dlp`, Deno, FFmpeg, and FFprobe — YouTube challenge solving, media
   processing, and downloader fallbacks;
 - optional OpenAI Whisper CLI — local audio and video transcription;
@@ -180,7 +180,7 @@ whether unsupported links are deleted. The setting is stored in
 
 For permanent silent moderation, a group administrator sends a standalone `blahajblahajblahaj`
 message (without a slash). The bot silently enables deletion of all links and
-stops replying, calling the LLM, downloading media, handling commands or buttons,
+stops replying, calling the LLM, downloading media, handling ordinary commands or buttons,
 and sending reminders. Edited messages and media captions are checked too.
 Administrators remain exempt. Links to supported sites and allowlisted sites are
 deleted too.
@@ -188,6 +188,37 @@ This mode is per group, persists in `LINK_MODERATION_FILE` across restarts, and
 cannot be disabled through the bot, including `/linkdelete off` or another `blahajblahajblahaj`.
 The bot needs permission to delete messages. Successful activation is logged as
 `[moderation] silent_enabled` with the chat, user, and message IDs.
+
+Automatically forwarded posts from the linked channel are exempt in its discussion
+group, including captions and edits. This uses Telegram's
+[`is_automatic_forward`](https://core.telegram.org/bots/api#message) flag; ordinary
+manual forwards and replies to a channel post remain subject to moderation.
+Anonymous administrators sending as the group itself are also exempt.
+
+An administrator can grant a participant permission **before** they post links:
+
+- Reply to any message from the participant with `/permitlinks`.
+- Reply with `/revokelinks` to revoke that permission.
+- Alternatively supply a numeric Telegram user ID: `/permitlinks 123456789` or
+  `/revokelinks 123456789`. Usernames are not supported.
+
+Permission lasts until revoked, applies only to that user in that group, and
+persists in `LINK_MODERATION_FILE`. It covers links in messages, captions and
+edits without granting admin rights. After revocation, subsequent messages/edits
+are checked again. Deleted messages cannot be restored; revocation does not
+rescan chat history.
+
+These two special silent-mode commands produce **no chat replies**, including
+when issued by an anonymous group administrator. Grants/revocations are logged
+as `[moderation] link_permission` with chat, admin and target IDs plus
+`allowed=true` / `allowed=false`. Invalid commands and storage failures appear
+in technical logs. In other chats these commands do not enable or change moderation.
+For a service named `nyande-bot`:
+
+```bash
+journalctl -u nyande-bot -f | rg '\[moderation\]|update .* failed'
+```
+
 
 ## Bot commands
 
@@ -213,6 +244,7 @@ The bot needs permission to delete messages. Successful activation is logged as
 | `/mediainfo` | show technical specs (resolution, FPS, duration, codecs) of photo/video/audio |
 | `/allowlink example.com` | allow a domain in a private chat or as an administrator |
 | `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
+| `/permitlinks` / `/revokelinks` | reply to a participant to grant/revoke links in silent mode (administrators only) |
 
 Use `!gif` with an attached video, a supported link, or as a reply to a video
 message. The bot sends a silent GIF at 15 fps and up to 480 pixels wide,
@@ -292,3 +324,7 @@ TikTok requests can use `search_tiktok` when web search is enabled. It keeps onl
 Use `!llm off` / `!llm on` to disable or enable the LLM across a Discord server (Manage Server or Administrator permission required), or for your DM conversation. `!llm` shows the status. Media downloads remain available. Settings persist in `DISCORD_LLM_SETTINGS_FILE` across restarts. Commands use `DISCORD_COMMAND_PREFIX`; enabling requires the LLM to be enabled in the bot configuration.
 
 [Discord voice music: commands and setup](docs/discord-music.md).
+
+Discord music UI: `/nyande search` opens a private browser with source selection and multi-select results. `/nyande player` shows playback controls. Pagination, repeat, volume, shuffle and queue reordering are supported. See the [setup guide](docs/discord-music.md).
+
+Music now defaults to direct DisGo + DAVE voice with `yt-dlp` and FFmpeg; Java/Lavalink is not required. `MUSIC_MAX_PLAYERS=1` limits concurrent voice players across all servers. See [native installation and migration](docs/discord-music.md).
