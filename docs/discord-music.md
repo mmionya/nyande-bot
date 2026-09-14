@@ -146,3 +146,5 @@ encoded into 100 Opus frames. Bandcamp returned a browser challenge. A live
 Discord voice connection and DAVE negotiation were not exercised in this environment.
 A separate synthetic FFmpeg encoding run peaked around 51 MiB RSS; this excludes
 the Go bot, yt-dlp, Deno and the OS and is not a 512 MB host guarantee.
+
+Standalone `/search`, `/play`, `/player`, `/queue` and the other music commands now appear directly in the `/` picker. They reuse the corresponding `/nyande …` behavior. `/help` is general help; `/nyande help` remains music help.

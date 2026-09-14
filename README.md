@@ -328,3 +328,18 @@ Use `!llm off` / `!llm on` to disable or enable the LLM across a Discord server 
 Discord music UI: `/nyande search` opens a private browser with source selection and multi-select results. `/nyande player` shows playback controls. Pagination, repeat, volume, shuffle and queue reordering are supported. See the [setup guide](docs/discord-music.md).
 
 Music now defaults to direct DisGo + DAVE voice with `yt-dlp` and FFmpeg; Java/Lavalink is not required. `MUSIC_MAX_PLAYERS=1` limits concurrent voice players across all servers. See [native installation and migration](docs/discord-music.md).
+
+
+### Discord command picker
+
+After installing the updated binary and restarting, the bot registers individual
+slash commands with descriptions and typed options. Type `/` and select nyande:
+`/help`, `/ping`, `/stats`, `/reset`, `/llm`, `/gif`, `/search`, `/play`, `/player`,
+`/queue`, `/skip`, `/pause`, `/resume`, `/stop`, `/shuffle`, `/clear`, `/move`,
+`/repeat`, `/volume`. `/llm mode:off` requires Manage Server; no mode shows status.
+`/gif` accepts a `url` or `video` attachment and returns the result privately.
+Existing prefix commands and `/nyande` remain available.
+
+The installation needs `applications.commands` and channel permission to use
+application commands. If the picker is stale, check startup logs for
+`[discord] slash command registration failed` and reopen Discord.

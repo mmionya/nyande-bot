@@ -161,8 +161,18 @@ func (b *Bot) handleMusicInteraction(s *discordgo.Session, event *discordgo.Inte
 	i := event.Interaction
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
-		if i.ApplicationCommandData().Name != "nyande" {
+		if b.handleGeneralSlash(s, i) {
 			return
+		}
+		data := i.ApplicationCommandData()
+		if data.Name != "nyande" {
+			if !standaloneMusicCommand(data.Name) {
+				return
+			}
+			// Copy the interaction so other handlers see the original command.
+			copyInteraction := *i
+			copyInteraction.Data = discordgo.ApplicationCommandInteractionData{Name: "nyande", Options: []*discordgo.ApplicationCommandInteractionDataOption{{Name: data.Name, Type: discordgo.ApplicationCommandOptionSubCommand, Options: data.Options}}}
+			i = &copyInteraction
 		}
 	case discordgo.InteractionMessageComponent:
 		if !strings.HasPrefix(i.MessageComponentData().CustomID, "music:") {

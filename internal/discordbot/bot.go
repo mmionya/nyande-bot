@@ -99,8 +99,8 @@ func (b *Bot) Run(ctx context.Context) error {
 		log.Printf("[discord] could not update status: %v", err)
 	}
 
-	if err := b.registerMusicCommands(); err != nil {
-		log.Printf("[music] slash command registration failed: %v", err)
+	if err := b.registerDiscordCommands(); err != nil {
+		log.Printf("[discord] slash command registration failed: %v", err)
 	}
 	go b.musicPanelLoop(ctx)
 	<-ctx.Done()
