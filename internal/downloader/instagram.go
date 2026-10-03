@@ -53,7 +53,7 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 			combined = errors.Join(combined, err)
 			continue
 		}
-		urls, pageCaption := instagramPageMedia(page)
+		urls, pageCaption := instagramPageMedia(page, mediaType == "p")
 		caption = firstNonEmpty(caption, pageCaption)
 		if len(urls) > 0 {
 			mediaCandidates = append(mediaCandidates, urls)
@@ -80,15 +80,51 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		combined = errors.Join(combined, err)
 	}
 
-	result, err := d.downloadInstagramApify(ctx, canonical)
-	if err == nil {
-		if result.Caption == "" {
-			result.Caption = caption
-		}
-		return result, nil
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
 	}
-	combined = errors.Join(combined, err)
+	if mediaType == "reel" || mediaType == "tv" {
+		item, err := d.downloadInstagramVX(ctx, match[2], canonical)
+		if err == nil {
+			return Result{Items: []Media{item}, Caption: caption, Source: "instagram"}, nil
+		}
+		combined = errors.Join(combined, fmt.Errorf("vxinstagram download failed: %w", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if d.cfg.APIFYToken != "" {
+		result, err := d.downloadInstagramApify(ctx, canonical)
+		if err == nil {
+			if result.Caption == "" {
+				result.Caption = caption
+			}
+			return result, nil
+		}
+		combined = errors.Join(combined, err)
+	}
 	return Result{}, fmt.Errorf("instagram download failed: %w", combined)
+}
+
+func (d *Downloader) downloadInstagramVX(ctx context.Context, shortcode, referer string) (Media, error) {
+	client := *d.client
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if next.URL.Scheme != "https" || !hostMatches(next.URL.Hostname(),
+			"vxinstagram.com", "cdninstagram.com", "fbcdn.net", "snapcdn.app", "rapidcdn.app") {
+			return errors.New("vxinstagram redirected to an unsupported media host")
+		}
+		if len(via) >= 6 {
+			return errors.New("too many vxinstagram redirects")
+		}
+		if d.client.CheckRedirect != nil {
+			return d.client.CheckRedirect(next, via)
+		}
+		return nil
+	}
+	mediaDownloader := Downloader{cfg: d.cfg, client: &client}
+	// The documented offload route returns one item, so use it only for Reels/TV.
+	return mediaDownloader.fetchMediaWithReferer(ctx,
+		"https://vxinstagram.com/offload/"+url.PathEscape(shortcode), "video", referer)
 }
 
 func (d *Downloader) fetchInstagramPage(ctx context.Context, pageURL string) (string, error) {
@@ -116,7 +152,7 @@ func (d *Downloader) fetchInstagramPage(ctx context.Context, pageURL string) (st
 	return string(page), nil
 }
 
-func instagramPageMedia(page string) ([]string, string) {
+func instagramPageMedia(page string, allowImages bool) ([]string, string) {
 	caption := firstNonEmpty(metaValue(page, "og:description"), metaValue(page, "description"))
 	caption = cleanInstagramDescription(html.UnescapeString(caption))
 	if caption == "" {
@@ -142,6 +178,9 @@ func instagramPageMedia(page string) ([]string, string) {
 	videos = append(videos, instagramJSONURLs(page, videoURLPattern)...)
 	if videos = uniqueHTTPS(videos); len(videos) > 0 {
 		return videos, caption
+	}
+	if !allowImages || strings.Contains(strings.ToLower(metaValue(page, "og:type")), "video") {
+		return nil, caption
 	}
 
 	images := instagramJSONURLs(page, displayURLPattern)

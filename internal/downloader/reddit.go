@@ -128,24 +128,9 @@ func redditImageURLs(post map[string]any) []string {
 		}
 	}
 	if len(result) == 0 {
-		if preview, ok := post["preview"].(map[string]any); ok {
-			images, _ := preview["images"].([]any)
-			for index, raw := range images {
-				image, _ := raw.(map[string]any)
-				source, _ := image["source"].(map[string]any)
-				link, _ := source["url"].(string)
-				if link != "" {
-					result = append(result, struct {
-						order int
-						url   string
-					}{index, html.UnescapeString(link)})
-				}
-			}
-		}
-	}
-	if len(result) == 0 {
+		// Previews also contain video thumbnails; use only the original image.
 		link := firstMapString(post, "url_overridden_by_dest", "url")
-		if parsed, err := url.Parse(link); err == nil && redditImageHost(parsed.Hostname()) {
+		if parsed, err := url.Parse(link); err == nil && redditImageHost(parsed.Hostname()) && kindFromExtension(parsed.Path) == "photo" {
 			result = append(result, struct {
 				order int
 				url   string

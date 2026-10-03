@@ -171,7 +171,7 @@ func youtubeMediaFormat(height int) string {
 		"bestvideo[ext=mp4][vcodec^=hvc1][height<=" + limit + "]+bestaudio[ext=m4a]/" +
 		"bestvideo[ext=mp4][vcodec^=avc1][height<=" + limit + "]+bestaudio[ext=m4a]/" +
 		"best[ext=mp4][vcodec^=avc1][height<=" + limit + "]/" +
-		"bestvideo[height<=" + limit + "]+bestaudio/best[height<=" + limit + "]/best"
+		"bestvideo[height<=" + limit + "]+bestaudio/best[height<=" + limit + "]"
 }
 
 func youtubeFormatFallbackError(err error) bool {

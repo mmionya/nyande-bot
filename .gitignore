@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+/cookies*.txt
 .nyande-allowed-links.json
 .nyande-link-moderation.json
 .nyande-llm-history.json

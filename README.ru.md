@@ -266,6 +266,35 @@ go vet ./...
 `ffprobe`. Docker-образ уже включает их. Для локальной расшифровки
 дополнительно нужен CLI `whisper`.
 
+## Скачивание без ручного экспорта cookies
+
+Для публичных роликов оставь `YTDLP_COOKIES_FILE` и
+`YTDLP_COOKIES_FROM_BROWSER` пустыми. После неудачи обычного загрузчика
+Instagram бот пробует vxinstagram для Reels и IGTV. Этот резервный путь
+передаёт сервису ссылку на ролик и зависит от его доступности; карусели
+продолжают обрабатываться обычными загрузчиками.
+
+Для YouTube используется [bgutil PO Token Provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider):
+он автоматически получает проверочные токены, не требуя входа в аккаунт.
+Docker-образ включает провайдер. При запуске напрямую установи его **от
+пользователя службы бота**, с Deno 2.4.3+ в её `PATH`:
+
+```bash
+git clone --depth 1 --branch 2.0.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git ~/bgutil-ytdlp-pot-provider
+cd ~/bgutil-ytdlp-pot-provider/server
+deno install --prod --allow-scripts=npm:canvas --frozen
+mkdir -p ~/.config/yt-dlp/plugins
+curl -fL --retry 3 https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/2.0.1/bgutil-ytdlp-pot-provider.zip -o ~/.config/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip
+```
+
+Если задан `XDG_CONFIG_HOME`, используй его вместо `~/.config`.
+yt-dlp обнаруживает плагин и провайдер автоматически; это работает и для
+видео, и для музыки Discord. Отдельная служба и новые настройки бота не нужны.
+Для обновления версия плагина и репозитория провайдера должна совпадать.
+Запуск скрипта добавляет задержку к получению токенов; для высокой нагрузки
+upstream предлагает отдельный HTTP-сервис. Требование входа из-за ограничений
+IP или закрытого контента эти способы не снимают.
+
 ## Структура репозитория
 
 ```text

@@ -265,6 +265,33 @@ The bot requires `yt-dlp` with its EJS component, Deno, `ffmpeg`, and `ffprobe`
 at runtime. The Docker image includes all of them. Local transcription
 additionally requires the `whisper` CLI.
 
+## Downloads without manually exported cookies
+
+Leave `YTDLP_COOKIES_FILE` and `YTDLP_COOKIES_FROM_BROWSER` empty for public
+videos. If the normal Instagram download fails, the bot tries vxinstagram
+for Reels and IGTV. This fallback sends the video URL to that service and
+depends on its availability; carousels keep using the normal downloaders.
+
+For YouTube, [bgutil PO Token Provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
+automatically obtains verification tokens without an account login. The Docker
+image includes it. For native installations, run the following **as the bot's
+service user**, with Deno 2.4.3+ on the service's `PATH`:
+
+```bash
+git clone --depth 1 --branch 2.0.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git ~/bgutil-ytdlp-pot-provider
+cd ~/bgutil-ytdlp-pot-provider/server
+deno install --prod --allow-scripts=npm:canvas --frozen
+mkdir -p ~/.config/yt-dlp/plugins
+curl -fL --retry 3 https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/2.0.1/bgutil-ytdlp-pot-provider.zip -o ~/.config/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip
+```
+
+If `XDG_CONFIG_HOME` is set, use it instead of `~/.config`.
+yt-dlp discovers the plugin and provider automatically for both media downloads
+and Discord music. No extra daemon or bot settings are needed. Keep plugin and
+provider versions matched when updating. Script startup adds latency to token
+generation; upstream offers an HTTP service for higher concurrency. These routes
+do not remove login requirements caused by IP restrictions or private content.
+
 ## Repository structure
 
 ```text

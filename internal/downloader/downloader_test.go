@@ -1,12 +1,53 @@
 package downloader
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mmionya/nyande-bot/internal/config"
 )
+
+func TestDownloadRetriesOnlyTemporaryFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		status    int
+		cancelled bool
+		wantCalls int
+	}{
+		{"forbidden", http.StatusForbidden, false, 1},
+		{"not found", http.StatusNotFound, false, 1},
+		{"rate limited", http.StatusTooManyRequests, false, 3},
+		{"server error", http.StatusServiceUnavailable, false, 3},
+		{"cancelled", http.StatusServiceUnavailable, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			d := New(config.Config{RetryAttempts: 3})
+			d.client.Transport = mediaRedirectTransport(func(r *http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.cancelled {
+				cancel()
+			}
+			_, err := d.Download(ctx, "https://8.8.8.8/video.mp4")
+			if err == nil || calls != tc.wantCalls {
+				t.Fatalf("Download() calls = %d, err = %v; want %d calls and an error", calls, err, tc.wantCalls)
+			}
+		})
+	}
+}
 
 func TestSupportedPlatformsAndDirectMedia(t *testing.T) {
 	valid := []string{
@@ -96,6 +137,32 @@ func TestYouTubeYTDLPFormatsFallBackToLowerResolutions(t *testing.T) {
 	for index, height := range wantHeights {
 		if !strings.Contains(formats[index], "[height<="+height+"]") {
 			t.Fatalf("format attempt %d must be limited to %sp: %q", index, height, formats[index])
+		}
+	}
+}
+
+// Exercise yt-dlp's actual selector offline: /best used to bypass the height
+// limit, retrying the same oversized video at every lower resolution.
+func TestYouTubeFormatDoesNotExceedHeight(t *testing.T) {
+	ytdlp, err := exec.LookPath("yt-dlp")
+	if err != nil {
+		t.Skip("yt-dlp is not installed")
+	}
+	infoPath := filepath.Join(t.TempDir(), "video.info.json")
+	info := `{"id":"clip","title":"clip","extractor":"test","webpage_url":"https://example.com/clip","formats":[
+		{"format_id":"high","url":"https://example.com/high.mp4","ext":"mp4","height":1080,"vcodec":"avc1","acodec":"mp4a"}]}`
+	if err := os.WriteFile(infoPath, []byte(info), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, height := range []int{1080, 720} {
+		output, err := exec.Command(ytdlp, "--ignore-config", "--simulate", "--no-warnings",
+			"--load-info-json", infoPath, "--format", youtubeMediaFormat(height), "--print", "format_id").CombinedOutput()
+		if height == 1080 {
+			if err != nil || strings.TrimSpace(string(output)) != "high" {
+				t.Fatalf("1080p format must remain available: %s, %v", output, err)
+			}
+		} else if err == nil || !strings.Contains(string(output), "Requested format is not available") {
+			t.Fatalf("720p limit must reject 1080p: %s, %v", output, err)
 		}
 	}
 }

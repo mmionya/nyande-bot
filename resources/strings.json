@@ -91,7 +91,7 @@
   "downloader.error.apify_missing": "Instagram скрыл это медиа. Настрой APIFY_TOKEN для резервного загрузчика.",
   "downloader.error.failed": "Не получилось скачать медиа: {error}",
   "downloader.error.generic": "источник не отдал доступное медиа",
-  "downloader.error.instagram_failed": "Instagram не открыл медиа без авторизации. Проверь, что публикация публичная; для ограниченных публикаций настрой APIFY_TOKEN.",
+  "downloader.error.instagram_failed": "Instagram не отдал медиа. Проверь, что публикация публичная, или попробуй позже.",
   "downloader.error.not_found": "публикация не найдена или недоступна",
   "downloader.error.telegram_send": "Файл скачался, но Telegram не разрешил его отправить. Попробуй другую публикацию или файл поменьше.",
   "downloader.error.timeout": "источник отвечает слишком долго — попробуй ещё раз",

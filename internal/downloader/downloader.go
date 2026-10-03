@@ -87,6 +87,9 @@ func (d *Downloader) Download(ctx context.Context, rawURL string) (Result, error
 
 	var result Result
 	for attempt := 1; attempt <= d.cfg.RetryAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 		result, err = operation(ctx, parsed)
 		if err == nil {
 			if len(result.Items) > d.cfg.MaxMediaItems {
@@ -95,7 +98,10 @@ func (d *Downloader) Download(ctx context.Context, rawURL string) (Result, error
 			result.Caption = truncateCaption(result.Caption)
 			return result, nil
 		}
-		if attempt < d.cfg.RetryAttempts && retryable(err) {
+		if !retryable(err) {
+			break
+		}
+		if attempt < d.cfg.RetryAttempts {
 			select {
 			case <-ctx.Done():
 				return Result{}, ctx.Err()
@@ -249,7 +255,7 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0]))
 	kind := kindFromContentType(contentType)
-	if kind == "" {
+	if kind == "" && (contentType == "" || contentType == "application/octet-stream") {
 		kind = kindFromExtension(response.Request.URL.Path)
 	}
 	if kind == "" {
