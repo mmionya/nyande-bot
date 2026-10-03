@@ -357,10 +357,11 @@ func retryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	text := strings.ToLower(err.Error())
+	text := strings.ReplaceAll(strings.ToLower(err.Error()), "http error ", "http ")
 	return strings.Contains(text, "timeout") || strings.Contains(text, "temporar") ||
 		strings.Contains(text, "connection") || strings.Contains(text, "http 429") ||
-		strings.Contains(text, "http 5")
+		strings.Contains(text, "http 5") ||
+		strings.Contains(text, "unable to download video data: http 403")
 }
 
 var whitespace = regexp.MustCompile(`\s+`)

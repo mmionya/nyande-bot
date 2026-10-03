@@ -49,6 +49,26 @@ func TestDownloadRetriesOnlyTemporaryFailures(t *testing.T) {
 	}
 }
 
+func TestRetryableYTDLPFailures(t *testing.T) {
+	for _, tc := range []struct {
+		message string
+		want    bool
+	}{
+		{"yt-dlp failed: exit status 1: ERROR: unable to download video data: HTTP Error 403: Forbidden", true},
+		{"ERROR: Unable to download webpage: HTTP Error 403: Forbidden", false},
+		{"ERROR: Unable to download API page: HTTP Error 403: Forbidden", false},
+		{"ERROR: Sign in to confirm you're not a bot", false},
+		{"ERROR: unable to download video data: HTTP Error 404: Not Found", false},
+		{"ERROR: Unable to download webpage: HTTP Error 429: Too Many Requests", true},
+		{"ERROR: unable to download video data: HTTP Error 503: Service Unavailable", true},
+		{"ERROR: Requested format is not available", false},
+	} {
+		if got := retryable(errors.New(tc.message)); got != tc.want {
+			t.Errorf("retryable(%q) = %v; want %v", tc.message, got, tc.want)
+		}
+	}
+}
+
 func TestSupportedPlatformsAndDirectMedia(t *testing.T) {
 	valid := []string{
 		"https://www.tiktok.com/@cat/video/123",
