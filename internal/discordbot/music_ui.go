@@ -159,6 +159,14 @@ func (b *Bot) handleMusicInteraction(s *discordgo.Session, event *discordgo.Inte
 		return
 	}
 	i := event.Interaction
+	if actor := musicActor(i); actor != nil && b.access.IsBanned(actor.ID) {
+		if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
+			musicRespond(s, i, discordgo.InteractionApplicationCommandAutocompleteResult, &discordgo.InteractionResponseData{Choices: []*discordgo.ApplicationCommandOptionChoice{}})
+		} else {
+			musicPrivate(s, i, "Доступ к боту заблокирован.")
+		}
+		return
+	}
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
 		if b.handleGeneralSlash(s, i) {

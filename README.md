@@ -214,8 +214,10 @@ edits without granting admin rights. After revocation, subsequent messages/edits
 are checked again. Deleted messages cannot be restored; revocation does not
 rescan chat history.
 
-These two special silent-mode commands produce **no chat replies**, including
-when issued by an anonymous group administrator. Grants/revocations are logged
+These two special silent-mode commands produce **no chat replies** and run
+only when issued from an identified administrator account. Commands sent as a group
+or channel are ignored because Telegram hides the sender ID needed for ban checks.
+Grants/revocations are logged
 as `[moderation] link_permission` with chat, admin and target IDs plus
 `allowed=true` / `allowed=false`. Invalid commands and storage failures appear
 in technical logs. In other chats these commands do not enable or change moderation.
@@ -225,6 +227,40 @@ For a service named `nyande-bot`:
 journalctl -u nyande-bot -f | rg '\[moderation\]|update .* failed'
 ```
 
+
+## Blocking access to the bot
+
+Set numeric owner IDs in `.env`: `BOT_OWNER_IDS=123456789` for Telegram and
+`DISCORD_OWNER_IDS=123456789012345678` for Discord. Separate multiple IDs with
+commas and restart after configuration changes. Only these owners can manage
+global bans; group/server administrator permissions do not grant this ability.
+Without configured owners, ban management commands are unavailable.
+
+- Telegram: `/botban 123456789` and `/botunban 123456789`, or reply to a user's
+  message with either command without an ID. Usernames are not supported.
+- Discord: `/botban user:person` and `/botunban user:person`. Prefix commands
+  `!botban` / `!botunban` accept an ID, mention, or reply target; the prefix follows
+  `DISCORD_COMMAND_PREFIX`.
+
+Bans apply to an account in every chat on its platform, including DMs. New
+messages cannot invoke commands, media downloads, LLM calls, games or music;
+buttons and forms are blocked too. Telegram rejects new payments and discards
+pending reminders for banned users when they become due. Owners and the bot
+itself cannot be banned. Telegram and Discord accounts are separate identities;
+ban each separately when needed.
+
+To prevent identity bypasses, Telegram ignores requests sent as a channel or
+anonymous administrator: use your own account for commands. Link moderation
+still applies to banned users. Automatically forwarded linked-channel posts
+remain exempt from deletion, but do not trigger downloads. In silent groups,
+ban commands are ignored; use the bot's DM with a numeric target ID. Operations
+already started before a ban may finish. A bot ban does not remove someone from
+a group or hide the bot's shared messages from them.
+
+Bans persist in `BANNED_USERS_FILE` (default `.nyande-banned-users.json`), with
+`.discord` appended for Discord. Compose keeps both files in its persistent
+`/app/data` volume. Failed saves leave access unchanged and never report success;
+an invalid ban file stops startup instead of silently losing the bans.
 
 ## Bot commands
 

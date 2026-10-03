@@ -24,6 +24,8 @@ func discordApplicationCommands() []*discordgo.ApplicationCommand {
 		commands = append(commands, &discordgo.ApplicationCommand{Name: sub.Name, Description: sub.Description, Options: sub.Options, DMPermission: music.DMPermission})
 	}
 	commands = append(commands,
+		&discordgo.ApplicationCommand{Name: "botban", Description: "Заблокировать доступ к боту (только владелец)", Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: "Пользователь", Required: true}}},
+		&discordgo.ApplicationCommand{Name: "botunban", Description: "Вернуть доступ к боту (только владелец)", Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: "Пользователь", Required: true}}},
 		&discordgo.ApplicationCommand{Name: "help", Description: "Все команды и возможности бота"},
 		&discordgo.ApplicationCommand{Name: "ping", Description: "Проверить, работает ли бот"},
 		&discordgo.ApplicationCommand{Name: "stats", Description: "Статистика бота"},
@@ -63,7 +65,7 @@ func standaloneMusicCommand(name string) bool {
 func (b *Bot) handleGeneralSlash(s *discordgo.Session, i *discordgo.Interaction) bool {
 	data := i.ApplicationCommandData()
 	switch data.Name {
-	case "help", "ping", "stats", "reset", "llm", "gif":
+	case "help", "ping", "stats", "reset", "llm", "gif", "botban", "botunban":
 	default:
 		return false
 	}
@@ -82,6 +84,13 @@ func (b *Bot) handleGeneralSlash(s *discordgo.Session, i *discordgo.Interaction)
 	message := musicInteractionMessage(i, data.Name, "")
 	var response string
 	switch data.Name {
+	case "botban", "botunban":
+		for _, option := range data.Options {
+			if option.Name == "user" && option.Type == discordgo.ApplicationCommandOptionUser {
+				message.Content += " " + fmt.Sprint(option.Value)
+			}
+		}
+		response = b.botBanCommand(s, message, data.Name == "botban")
 	case "help":
 		response = resources.Get("discord_slash_help")
 	case "ping":
@@ -129,6 +138,10 @@ func (b *Bot) slashGIF(s *discordgo.Session, i *discordgo.Interaction, data disc
 		defer func() { <-b.semaphore }()
 	case <-ctx.Done():
 		musicEdit(s, i, &discordgo.InteractionResponseData{Content: resources.Get("discord_gif_timeout")})
+		return
+	}
+	if b.access.IsBanned(message.Author.ID) {
+		musicEdit(s, i, &discordgo.InteractionResponseData{Content: "Доступ к боту заблокирован."})
 		return
 	}
 	b.mediaTotal.Add(1)

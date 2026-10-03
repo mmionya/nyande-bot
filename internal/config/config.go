@@ -9,11 +9,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mmionya/nyande-bot/internal/access"
 )
 
 type Config struct {
 	BotToken               string
+	BotOwnerIDs            []string
 	DiscordToken           string
+	DiscordOwnerIDs        []string
+	BannedUsersFile        string
 	DiscordPrefix          string
 	DiscordLLMSettingsFile string
 	MusicBackend           string
@@ -72,7 +77,10 @@ func Load() (Config, error) {
 	_ = loadDotEnv(".env")
 	cfg := Config{
 		BotToken:               firstEnv("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
+		BotOwnerIDs:            envList("BOT_OWNER_IDS", nil),
 		DiscordToken:           strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN")),
+		DiscordOwnerIDs:        envList("DISCORD_OWNER_IDS", nil),
+		BannedUsersFile:        envString("BANNED_USERS_FILE", ".nyande-banned-users.json"),
 		DiscordPrefix:          envString("DISCORD_COMMAND_PREFIX", "!"),
 		DiscordLLMSettingsFile: envString("DISCORD_LLM_SETTINGS_FILE", ".nyande-discord-llm.json"),
 		MusicBackend:           envString("DISCORD_MUSIC_BACKEND", "direct"),
@@ -131,6 +139,13 @@ func Load() (Config, error) {
 	}
 	if cfg.LLMEnabled && (cfg.LLMAPIKey == "" || cfg.LLMModel == "") {
 		return Config{}, errors.New("LLM_ENABLED requires LLM_API_KEY and LLM_MODEL")
+	}
+	for name, ids := range map[string][]string{"BOT_OWNER_IDS": cfg.BotOwnerIDs, "DISCORD_OWNER_IDS": cfg.DiscordOwnerIDs} {
+		for _, id := range ids {
+			if _, err := access.ParseUserID(id); err != nil {
+				return Config{}, fmt.Errorf("%s: %w", name, err)
+			}
+		}
 	}
 	return cfg, nil
 }

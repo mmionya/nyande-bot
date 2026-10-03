@@ -12,6 +12,7 @@ services:
     environment:
       ALLOWED_LINKS_FILE: /app/data/allowed-links.json
       LINK_MODERATION_FILE: /app/data/link-moderation.json
+      BANNED_USERS_FILE: /app/data/banned-users.json
       DISCORD_MUSIC_BACKEND: ${DISCORD_MUSIC_BACKEND:-direct}
       MUSIC_MAX_PLAYERS: ${MUSIC_MAX_PLAYERS:-1}
       DISCORD_LLM_SETTINGS_FILE: /app/data/discord-llm.json

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/mmionya/nyande-bot/internal/access"
 	"github.com/mmionya/nyande-bot/internal/config"
 	"github.com/mmionya/nyande-bot/internal/downloader"
 	"github.com/mmionya/nyande-bot/internal/llm"
@@ -35,6 +36,7 @@ type Bot struct {
 	music         *musicService
 	llm           languageModel
 	llmSettings   *llmSettings
+	access        *access.Store
 	conversations sync.Map
 	cfg           config.Config
 	session       *discordgo.Session
@@ -61,6 +63,14 @@ func New(cfg config.Config) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load Discord LLM settings: %w", err)
 	}
+	banFile := cfg.BannedUsersFile
+	if banFile == "" {
+		banFile = ".nyande-banned-users.json"
+	}
+	accessStore, err := access.Open(banFile+".discord", cfg.DiscordOwnerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load Discord bans: %w", err)
+	}
 	session, err := discordgo.New("Bot " + strings.TrimSpace(cfg.DiscordToken))
 	if err != nil {
 		return nil, fmt.Errorf("create Discord session: %w", err)
@@ -70,7 +80,7 @@ func New(cfg config.Config) (*Bot, error) {
 		discordgo.IntentsMessageContent
 
 	result := &Bot{
-		cfg: cfg, session: session, llmSettings: settings, downloader: downloader.New(cfg),
+		cfg: cfg, session: session, llmSettings: settings, access: accessStore, downloader: downloader.New(cfg),
 		llm:       llm.New(discordLLMConfig(cfg)),
 		semaphore: make(chan struct{}, 8), startedAt: time.Now(),
 		uniqueChannels: make(map[string]struct{}),
@@ -120,6 +130,9 @@ func (b *Bot) handleMessageCreate(session *discordgo.Session, event *discordgo.M
 	if event == nil || event.Message == nil || event.Author == nil || event.Author.Bot {
 		return
 	}
+	if b.access.IsBanned(event.Author.ID) {
+		return
+	}
 	if session.State != nil && session.State.User != nil && event.Author.ID == session.State.User.ID {
 		return
 	}
@@ -129,6 +142,9 @@ func (b *Bot) handleMessageCreate(session *discordgo.Session, event *discordgo.M
 	case b.semaphore <- struct{}{}:
 		defer func() { <-b.semaphore }()
 	case <-ctx.Done():
+		return
+	}
+	if b.access.IsBanned(event.Author.ID) {
 		return
 	}
 
@@ -158,6 +174,8 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 	log.Printf("[command] started platform=discord chat=%s user=%s msg=%s command=%q", message.ChannelID, author, message.ID, command)
 	var response string
 	switch command {
+	case "botban", "botunban":
+		response = b.botBanCommand(session, message, command == "botban")
 	case "play", "search", "queue", "skip", "pause", "resume", "stop", "leave", "clear", "shuffle", "move", "repeat", "volume":
 		response = b.musicCommand(session, message, command)
 	case "gif":

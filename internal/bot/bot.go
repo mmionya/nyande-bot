@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mmionya/nyande-bot/internal/access"
 	"github.com/mmionya/nyande-bot/internal/chatlog"
 	"github.com/mmionya/nyande-bot/internal/config"
 	"github.com/mmionya/nyande-bot/internal/downloader"
@@ -30,6 +31,7 @@ type adminKey struct {
 
 type Bot struct {
 	cfg        config.Config
+	access     *access.Store
 	telegram   *telegram.Client
 	downloader *downloader.Downloader
 	llm        *llm.Client
@@ -57,6 +59,14 @@ type Bot struct {
 }
 
 func New(cfg config.Config) (*Bot, error) {
+	banPath := cfg.BannedUsersFile
+	if banPath == "" {
+		banPath = ".nyande-banned-users.json"
+	}
+	users, err := access.Open(banPath, cfg.BotOwnerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load banned users: %w", err)
+	}
 	allowed, err := loadAllowlist(cfg.AllowedLinksFile)
 	if err != nil {
 		return nil, fmt.Errorf("load allowed links: %w", err)
@@ -104,7 +114,7 @@ func New(cfg config.Config) (*Bot, error) {
 		return nil, fmt.Errorf("open quote database: %w", err)
 	}
 	return &Bot{
-		cfg: cfg, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
+		cfg: cfg, access: users, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
 		llm: llm.New(cfg), memories: memories, chatlog: chatlogStore, reminders: remindersStore, state: NewState(), allowlist: allowed, linkConfig: linkConfig, media: newMediaCache(512),
 		adminCache: make(map[adminKey]adminEntry),
 		tttGames:   make(map[int64]*ticTacToeGame), tttPending: make(map[int64][2]int64),
@@ -149,6 +159,8 @@ func (b *Bot) Run(ctx context.Context) error {
 	go b.reminderLoop(ctx)
 	commands := []map[string]string{
 		{"command": "help", "description": "возможности бота"},
+		{"command": "botban", "description": "запретить доступ к боту (владелец)"},
+		{"command": "botunban", "description": "вернуть доступ к боту (владелец)"},
 		{"command": "linkdelete", "description": "удаление неподдерживаемых ссылок"},
 		{"command": "permitlinks", "description": "разрешить участнику ссылки в тихом режиме"},
 		{"command": "revokelinks", "description": "отозвать разрешение на ссылки в тихом режиме"},
@@ -216,6 +228,10 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	}
 	unlock := b.lockUpdates(chatID)
 	defer unlock()
+
+	if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
+		return err
+	}
 
 	if update.EditedMessage != nil {
 		if b.silentModeration(update.EditedMessage.Chat.ID) {
@@ -287,6 +303,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
+		case "botban", "botunban":
+			return b.botBanCommand(ctx, message, command, arguments)
 		case "start":
 			_, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("bot.start"), message.MessageID, nil)
 			return err
@@ -410,6 +428,9 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 		return nil
 	}
 	if b.silentModeration(message.Chat.ID) {
+		return nil
+	}
+	if b.blockedMessage(message) {
 		return nil
 	}
 	supported := supportedURLs(urls)
@@ -609,9 +630,9 @@ func (b *Bot) lockUpdates(chatID int64) func() {
 func (b *Bot) deliverReminder(ctx context.Context, r reminders.Reminder) {
 	unlock := b.lockUpdates(r.ChatID)
 	defer unlock()
-	if b.silentModeration(r.ChatID) {
+	if b.silentModeration(r.ChatID) || b.access.IsBanned(strconv.FormatInt(r.UserID, 10)) {
 		if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
-			log.Printf("[reminders] discard silent-chat reminder %d: %v", r.ID, err)
+			log.Printf("[reminders] discard blocked reminder %d: %v", r.ID, err)
 		}
 		return
 	}

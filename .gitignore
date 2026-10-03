@@ -4,6 +4,7 @@
 /cookies*.txt
 .nyande-allowed-links.json
 .nyande-link-moderation.json
+.nyande-banned-users.json*
 .nyande-llm-history.json
 .nyande-llm-history.json.discord
 .nyande-llm-history.json.discord.tmp

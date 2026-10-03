@@ -70,3 +70,33 @@ func TestDirectMusicDefaults(t *testing.T) {
 		t.Fatal("music configuration override failed", err)
 	}
 }
+
+func TestBanConfiguration(t *testing.T) {
+	t.Setenv("BOT_TOKEN", "test")
+	t.Setenv("LLM_ENABLED", "false")
+	t.Setenv("BOT_OWNER_IDS", "1, 2;1")
+	t.Setenv("DISCORD_OWNER_IDS", "18446744073709551615")
+	t.Setenv("BANNED_USERS_FILE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg.BotOwnerIDs, []string{"1", "2"}) || !reflect.DeepEqual(cfg.DiscordOwnerIDs, []string{"18446744073709551615"}) || cfg.BannedUsersFile != ".nyande-banned-users.json" {
+		t.Fatal("unexpected ban configuration")
+	}
+	t.Setenv("BANNED_USERS_FILE", "/tmp/custom-bans.json")
+	cfg, err = Load()
+	if err != nil || cfg.BannedUsersFile != "/tmp/custom-bans.json" {
+		t.Fatalf("custom ban path not loaded: %v", err)
+	}
+	for _, name := range []string{"BOT_OWNER_IDS", "DISCORD_OWNER_IDS"} {
+		for _, invalid := range []string{"1,invalid", "0", "01", "+1", "-1", "18446744073709551616"} {
+			t.Run(name+"/"+invalid, func(t *testing.T) {
+				t.Setenv(name, invalid)
+				if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+					t.Fatalf("invalid owner configuration accepted: %v", err)
+				}
+			})
+		}
+	}
+}
