@@ -149,9 +149,15 @@ Telegram messages instead of being truncated.
 Long-term memory is stored separately in the SQLite database at
 `LLM_MEMORY_FILE`. Records are scoped to both the Telegram chat and user, so
 participants in a group do not share profiles. The model receives up to
-`LLM_MEMORY_RECALL_LIMIT` relevant or recent records and can save or remove one
-only through explicit memory tools. Obvious passwords, API keys, and tokens are
-rejected. Set `LLM_MEMORY_ENABLED=false` to disable the feature.
+`LLM_MEMORY_RECALL_LIMIT` relevant or recent records. During a conversation, the
+bot can proactively save useful, lasting facts the user states about themselves,
+such as their name, preferences, goals, and ongoing projects, without a
+`/remember` command. It briefly acknowledges successful saves. It is instructed
+to respect requests not to remember something and skip guesses, other people's
+messages, and transient requests. Use `/memory` to inspect records; ask it to
+forget a fact or use `/forget` and `/forget_all` to remove them. Obvious passwords,
+API keys, and tokens are rejected. Set `LLM_MEMORY_ENABLED=false` to disable the
+feature.
 
 
 In private chats, the bot responds to ordinary text and media messages. In a
