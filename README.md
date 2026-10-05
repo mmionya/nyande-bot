@@ -387,9 +387,10 @@ Availability still depends on the source site and downloader configuration.
 In Telegram, ask “Write a Python script to sort a CSV and send it as a file”
 or “Create an HTML page with a timer.” The model writes the content and calls
 `create_file`; the bot delivers the file as an attachment replying to the message.
-For code requests it chooses an appropriate filename and extension. Plain text,
-Markdown, JSON, and CSV are also supported. Ask explicitly if you want only inline
-code or an explanation.
+Any extension is supported for UTF-8 text, including `.java`, `.cpp`, `.cs`,
+`.kt`, and `.kts`, as well as Markdown, JSON, and CSV. Specify an exact filename
+such as `Main.java`; otherwise the model chooses a suitable name and extension.
+Ask explicitly if you want only inline code or an explanation.
 
 Each request supports up to 10 files of at most 1 MiB each. Indentation and
 newlines are preserved. Files are built in memory from the model's output; the

@@ -18,8 +18,18 @@ import (
 
 func TestLLMCreateFileDeliversExactCode(t *testing.T) {
 	const content = "\n# Привет\r\nconfig = {\"path\": \"C:\\\\tmp\\\\кот\", \"quote\": \"\\\"yes\\\"\"}\nprint(\"мяу\")\n\n"
-	for _, mode := range []string{"native", "json text fallback"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, test := range []struct{ mode, filename string }{
+		{"native", "программа.py"},
+		{"json text fallback", "программа.py"},
+		{"native", "Main.java"},
+		{"json text fallback", "main.cpp"},
+		{"native", "Program.cs"},
+		{"json text fallback", "Main.kt"},
+		{"native", "script.kts"},
+		{"json text fallback", "code.custom"},
+		{"native", "Makefile"},
+	} {
+		t.Run(test.mode+"/"+test.filename, func(t *testing.T) {
 			requests, uploads := 0, 0
 			previous := http.DefaultTransport
 			t.Cleanup(func() { http.DefaultTransport = previous })
@@ -40,7 +50,7 @@ func TestLLMCreateFileDeliversExactCode(t *testing.T) {
 					}
 					data, err := io.ReadAll(file)
 					file.Close()
-					if err != nil || string(data) != content || header.Filename != "программа.py" || !strings.HasPrefix(header.Header.Get("Content-Type"), "text/plain") {
+					if err != nil || string(data) != content || header.Filename != test.filename || !strings.HasPrefix(header.Header.Get("Content-Type"), "text/plain") {
 						t.Fatalf("attachment changed: filename=%q content=%q err=%v", header.Filename, data, err)
 					}
 					var reply struct {
@@ -70,10 +80,10 @@ func TestLLMCreateFileDeliversExactCode(t *testing.T) {
 						if !advertised || uploads != 0 {
 							t.Fatal("create_file was not advertised before delivery")
 						}
-						args := map[string]string{"filename": " программа.py ", "content": content, "chat_id": "999"}
+						args := map[string]string{"filename": " " + test.filename + " ", "content": content, "chat_id": "999"}
 						encoded, _ := json.Marshal(args)
 						assistant = map[string]any{"tool_calls": []any{map[string]any{"id": "file-1", "type": "function", "function": map[string]any{"name": "create_file", "arguments": string(encoded)}}}}
-						if mode == "json text fallback" {
+						if test.mode == "json text fallback" {
 							encoded, _ = json.Marshal(map[string]any{"name": "create_file", "arguments": args})
 							assistant = map[string]any{"content": "<tool_call>" + string(encoded) + "</tool_call>"}
 						}
