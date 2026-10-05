@@ -357,7 +357,7 @@ Only download and share content that you own or have permission to use.
 
 Reply with `/quote` to a text message or media caption to save it and receive a
 PNG card with the author's avatar filling the background, softly blurred and
-darkened behind bold white text with a black outline and a `© Author` signature.
+darkened behind white Nunito SemiBold text with a black outline and a `© Author` signature.
 Without an available avatar, the card uses a dark background. Forwarded
 messages use the original author when Telegram provides it. Quotes support up to
 1,200 characters; rich formatting and animated emoji are not preserved in cards.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"fmt"
 	"image"
@@ -20,6 +21,14 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 )
+
+// Nunito, static weight 600 from https://github.com/google/fonts/tree/main/ofl/nunito.
+// The OFL license is included in the font metadata and assets/Nunito-OFL.txt.
+//
+//go:embed assets/Nunito-SemiBold.ttf
+var quoteFontData []byte
+
+var quoteFont = mustOpenTypeFont(quoteFontData)
 
 const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n/quote trigger — показать слово-триггер\n/quote trigger цитата — задать слово для цитирования ответом\n/quote trigger off — отключить триггер\n\nВ группах триггер настраивают администраторы. Можно цитировать текст и подписи к медиа, до 1200 символов."
 
@@ -211,7 +220,7 @@ func quoteFromMessage(chatID, savedBy int64, m *telegram.Message) quotes.Quote {
 
 func renderQuoteCard(q quotes.Quote, avatar image.Image) ([]byte, error) {
 	const width, margin = 800, 128
-	name, err := opentype.NewFace(tomatoBoldFont, &opentype.FaceOptions{Size: 36, DPI: 72, Hinting: font.HintingFull})
+	name, err := opentype.NewFace(quoteFont, &opentype.FaceOptions{Size: 36, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +235,7 @@ func renderQuoteCard(q quotes.Quote, avatar image.Image) ([]byte, error) {
 	var lines []string
 	var lineHeight, blockHeight int
 	for size := 36; ; size -= 2 {
-		body, err = opentype.NewFace(tomatoBoldFont, &opentype.FaceOptions{Size: float64(size), DPI: 72, Hinting: font.HintingFull})
+		body, err = opentype.NewFace(quoteFont, &opentype.FaceOptions{Size: float64(size), DPI: 72, Hinting: font.HintingFull})
 		if err != nil {
 			return nil, err
 		}
