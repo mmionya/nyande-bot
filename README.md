@@ -303,6 +303,9 @@ go test ./...
 go vet ./...
 ```
 
+With the Python `yt-dlp` package installed, check Instagram photo extraction with
+`python3 internal/downloader/instagram_photos_test.py`.
+
 The bot requires `yt-dlp` with its EJS component, Deno, `ffmpeg`, and `ffprobe`
 at runtime. The Docker image includes all of them. Local transcription
 additionally requires the `whisper` CLI.
@@ -313,6 +316,8 @@ Leave `YTDLP_COOKIES_FILE` and `YTDLP_COOKIES_FROM_BROWSER` empty for public
 videos. If the normal Instagram download fails, the bot tries vxinstagram
 for Reels and IGTV. This fallback sends the video URL to that service and
 depends on its availability; carousels keep using the normal downloaders.
+Instagram posts use an embedded yt-dlp plugin to download photos and videos
+in carousel order. The plugin needs no separate installation or cookie file.
 
 For YouTube, [bgutil PO Token Provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
 automatically obtains verification tokens without an account login. The Docker

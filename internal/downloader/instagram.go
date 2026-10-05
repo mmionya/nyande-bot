@@ -3,6 +3,7 @@ package downloader
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,9 @@ import (
 	"sort"
 	"strings"
 )
+
+//go:embed instagram_photos.py
+var instagramPhotosPlugin []byte
 
 var (
 	instagramShortcode       = regexp.MustCompile(`(?i)/(p|reel|reels|tv)/([A-Za-z0-9_-]+)`)
@@ -46,6 +50,15 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 	embed := canonical + "embed/captioned/"
 	var combined error
 	caption := ""
+	canonicalURL, _ := url.Parse(canonical)
+	if mediaType == "p" {
+		// The extractor retains carousel order and distinguishes photos from video covers.
+		result, err := d.downloadYTDLPWithOptions(ctx, canonicalURL, true)
+		if err == nil {
+			return result, nil
+		}
+		combined = err
+	}
 	mediaCandidates := make([][]string, 0, 2)
 	for _, pageURL := range []string{canonical, embed} {
 		page, err := d.fetchInstagramPage(ctx, pageURL)
@@ -67,8 +80,7 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		combined = errors.Join(combined, err)
 	}
 
-	canonicalURL, _ := url.Parse(canonical)
-	if canonicalURL != nil {
+	if mediaType != "p" {
 		result, err := d.downloadYTDLPWithOptions(ctx, canonicalURL, true)
 		if err == nil {
 			result.Source = "instagram"

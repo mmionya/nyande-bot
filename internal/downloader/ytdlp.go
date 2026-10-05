@@ -50,11 +50,25 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 	defer os.RemoveAll(directory)
 
 	output := filepath.Join(directory, "%(id)s.%(ext)s")
+	if IsInstagram(value) {
+		output = filepath.Join(directory, "%(playlist_index|0)05d-%(id)s.%(ext)s")
+	}
 	arguments := []string{
 		"--ignore-config", "--no-progress", "--newline",
 		"--max-filesize", strconv.FormatInt(d.cfg.MaxFileSize, 10),
 		"--write-info-json",
 		"--output", output,
+	}
+	if IsInstagram(value) {
+		pluginDir := filepath.Join(directory, "plugins")
+		plugin := filepath.Join(pluginDir, "nyande", "yt_dlp_plugins", "extractor", "instagram_photos.py")
+		if err := os.MkdirAll(filepath.Dir(plugin), 0700); err != nil {
+			return Result{}, err
+		}
+		if err := os.WriteFile(plugin, instagramPhotosPlugin, 0600); err != nil {
+			return Result{}, err
+		}
+		arguments = append(arguments, "--plugin-dirs", pluginDir)
 	}
 	arguments = append(arguments, ytdlpMediaOptionsForFormat(value, format)...)
 	if allowPlaylist {
