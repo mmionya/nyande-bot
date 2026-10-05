@@ -65,7 +65,7 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 		}
 		if err := b.quotes.SetTrigger(ctx, message.Chat.ID, trigger); err != nil {
 			if errors.Is(err, quotes.ErrInvalidTrigger) {
-				return say("Триггер — одно слово до 32 символов: буквы, цифры, дефис или подчёркивание.")
+				return say("Триггер — одно слово до 32 символов: буквы, цифры, точка, дефис или подчёркивание. Например: .й")
 			}
 			return err
 		}

@@ -118,12 +118,22 @@ func TestQuoteTriggerThroughHandleUpdate(t *testing.T) {
 			t.Fatalf("trigger %#v sent %d cards", test, photos-before)
 		}
 	}
+	permissionUpdate(t, b, permissionMessage(10, 1, "/quote trigger .й"), false)
+	for _, text := range []string{" .Й ", "й", ".й!", "а.й"} {
+		m := permissionMessage(10, 2, text)
+		m.ReplyToMessage = parent
+		before := photos
+		permissionUpdate(t, b, m, false)
+		if (photos == before+1) != (text == " .Й ") || photos > before+1 {
+			t.Fatalf("dotted trigger %q sent %d cards", text, photos-before)
+		}
+	}
 	items, err := store.List(context.Background(), -1)
 	if err != nil || len(items) != 1 || items[0].MessageID != 41 || items[0].AuthorID != 7 || items[0].Author != "Автор" || items[0].SavedBy != 2 || items[0].Text != parent.Caption {
 		t.Fatalf("trigger quoted the wrong message: %#v, %v", items, err)
 	}
 	permissionUpdate(t, b, permissionMessage(10, 1, "/quote trigger off"), false)
-	m := permissionMessage(10, 2, "цитата")
+	m := permissionMessage(10, 2, ".й")
 	m.ReplyToMessage = parent
 	before := photos
 	permissionUpdate(t, b, m, false)

@@ -373,7 +373,8 @@ Send only the configured word in reply to the message you want to quote;
 matching ignores case and surrounding spaces. Triggers are separate for each
 chat and survive restarts. Group administrators can configure them; in private
 chats you can configure your own. Triggers start disabled and accept up to 32
-letters, digits, underscores or hyphens. The bot must receive ordinary group
+letters, digits, dots, underscores or hyphens (for example, `/quote trigger .й`).
+The bot must receive ordinary group
 messages (administrator access or disabled Privacy Mode in BotFather).
 
 Collections are isolated by chat and saving the same message twice is idempotent.

@@ -122,7 +122,7 @@ func TestQuoteTriggerPersistsWithoutChangingQuotes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.SetTrigger(ctx, -2, "другое"); err != nil {
+	if err := s.SetTrigger(ctx, -2, " .Й "); err != nil {
 		t.Fatal(err)
 	}
 	for _, trigger := range []string{"two words", "quote!", "/quote", "bad\nword", "\xff", strings.Repeat("я", 33)} {
@@ -137,7 +137,7 @@ func TestQuoteTriggerPersistsWithoutChangingQuotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for chat, want := range map[int64]string{-1: "цитата_2-test", -2: "другое", -3: ""} {
+	for chat, want := range map[int64]string{-1: "цитата_2-test", -2: ".й", -3: ""} {
 		if got, err := s.Trigger(ctx, chat); err != nil || got != want {
 			t.Fatalf("chat %d: %q, %v", chat, got, err)
 		}
@@ -152,7 +152,7 @@ func TestQuoteTriggerPersistsWithoutChangingQuotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for chat, want := range map[int64]string{-1: "", -2: "другое"} {
+	for chat, want := range map[int64]string{-1: "", -2: ".й"} {
 		if got, err := s.Trigger(ctx, chat); err != nil || got != want {
 			t.Fatalf("disabled chat %d: %q, %v", chat, got, err)
 		}

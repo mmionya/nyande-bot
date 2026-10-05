@@ -15,7 +15,7 @@ import (
 
 const MaxTextRunes = 1200
 
-var ErrInvalidTrigger = errors.New("quote trigger must be one word of at most 32 letters, numbers, underscores or hyphens")
+var ErrInvalidTrigger = errors.New("quote trigger must be one word of at most 32 letters, numbers, dots, underscores or hyphens")
 
 type Quote struct {
 	ID, ChatID, AuthorID, SavedBy, Date int64
@@ -71,7 +71,7 @@ func (s *Store) SetTrigger(ctx context.Context, chatID int64, trigger string) er
 	}
 	trigger = strings.ToLower(strings.TrimSpace(trigger))
 	if utf8.RuneCountInString(trigger) > 32 || strings.IndexFunc(trigger, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_' && r != '-'
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '.' && r != '_' && r != '-'
 	}) >= 0 {
 		return ErrInvalidTrigger
 	}
