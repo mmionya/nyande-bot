@@ -360,7 +360,15 @@ PNG card with the author's avatar filling the background, softly blurred and
 darkened behind white Nunito SemiBold text with a black outline and a `© Author` signature.
 Without an available avatar, the card uses a dark background. Forwarded
 messages use the original author when Telegram provides it. Quotes support up to
-1,200 characters; rich formatting and animated emoji are not preserved in cards.
+1,200 characters. Standard Unicode emoji are rendered in color, including flags,
+skin tones and joined sequences, in both the quote and the author's name.
+Rich formatting, animation and Telegram custom emoji artwork are not preserved.
+Emoji images are bundled locally, so rendering does not need a CDN connection.
+
+Emoji artwork: [Twemoji 17.0.3](https://github.com/jdecked/twemoji/releases/tag/v17.0.3)
+by Twitter, Inc. and Twemoji contributors, licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The embedded archive
+includes the original graphics license and attribution; PNG artwork is unmodified.
 
 - `/quote random` — a random quote from this chat.
 - `/quote list` — the latest 10 quotes and their IDs.

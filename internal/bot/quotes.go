@@ -18,8 +18,6 @@ import (
 	"github.com/mmionya/nyande-bot/internal/quotes"
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	"golang.org/x/image/draw"
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/opentype"
 )
 
 // Nunito, static weight 600 from https://github.com/google/fonts/tree/main/ofl/nunito.
@@ -30,7 +28,7 @@ var quoteFontData []byte
 
 var quoteFont = mustOpenTypeFont(quoteFontData)
 
-const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n/quote trigger — показать слово-триггер\n/quote trigger цитата — задать слово для цитирования ответом\n/quote trigger off — отключить триггер\n\nВ группах триггер настраивают администраторы. Можно цитировать текст и подписи к медиа, до 1200 символов."
+const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n/quote trigger — показать слово-триггер\n/quote trigger цитата — задать слово для цитирования ответом\n/quote trigger off — отключить триггер\n\nВ группах триггер настраивают администраторы. Можно цитировать текст и подписи к медиа, до 1200 символов.\n\nЭмодзи: Twemoji — Twitter, Inc. и соавторы.\nИсточник: https://github.com/jdecked/twemoji\nЛицензия CC BY 4.0: https://creativecommons.org/licenses/by/4.0/"
 
 func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, arguments string) error {
 	say := func(text string) error {
@@ -220,22 +218,23 @@ func quoteFromMessage(chatID, savedBy int64, m *telegram.Message) quotes.Quote {
 
 func renderQuoteCard(q quotes.Quote, avatar image.Image) ([]byte, error) {
 	const width, margin = 800, 128
-	name, err := opentype.NewFace(quoteFont, &opentype.FaceOptions{Size: 36, DPI: 72, Hinting: font.HintingFull})
+	text, authorText, emoji := prepareQuoteEmoji(q.Text, q.Author)
+	name, err := newQuoteTextFace(36, emoji)
 	if err != nil {
 		return nil, err
 	}
 	defer name.Close()
-	text := strings.TrimSpace(q.Text)
+	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, "«") || !strings.HasSuffix(text, "»") {
 		text = "«" + text + "»"
 	}
-	author := wrapTelegramText("© "+q.Author, name, width-2*margin, utf8.RuneCountInString(q.Author)+2)
+	author := wrapTelegramText("© "+authorText, name, width-2*margin, utf8.RuneCountInString(q.Author)+2)
 	nameHeight := name.Metrics().Height.Ceil()
-	var body font.Face
+	var body *quoteTextFace
 	var lines []string
 	var lineHeight, blockHeight int
 	for size := 36; ; size -= 2 {
-		body, err = opentype.NewFace(quoteFont, &opentype.FaceOptions{Size: float64(size), DPI: 72, Hinting: font.HintingFull})
+		body, err = newQuoteTextFace(size, emoji)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +268,7 @@ func renderQuoteCard(q quotes.Quote, avatar image.Image) ([]byte, error) {
 		draw.BiLinear.Scale(canvas, canvas.Bounds(), softened, softened.Bounds(), draw.Over, nil)
 		draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.NRGBA{A: 72}), image.Point{}, draw.Over)
 	}
-	outlinedText := func(face font.Face, baseline int, text string) {
+	outlinedText := func(face *quoteTextFace, baseline int, text string) error {
 		for dy := -2; dy <= 2; dy++ {
 			for dx := -2; dx <= 2; dx++ {
 				if dx*dx+dy*dy <= 4 {
@@ -278,13 +277,18 @@ func renderQuoteCard(q quotes.Quote, avatar image.Image) ([]byte, error) {
 			}
 		}
 		drawText(canvas, face, margin, baseline, text, color.White)
+		return face.drawEmoji(canvas, margin, baseline, text)
 	}
 	top := (height - blockHeight) / 2
 	for i, line := range lines {
-		outlinedText(body, top+body.Metrics().Ascent.Ceil()+i*lineHeight, line)
+		if err := outlinedText(body, top+body.Metrics().Ascent.Ceil()+i*lineHeight, line); err != nil {
+			return nil, err
+		}
 	}
 	for i, line := range author {
-		outlinedText(name, top+len(lines)*lineHeight+24+name.Metrics().Ascent.Ceil()+i*nameHeight, line)
+		if err := outlinedText(name, top+len(lines)*lineHeight+24+name.Metrics().Ascent.Ceil()+i*nameHeight, line); err != nil {
+			return nil, err
+		}
 	}
 	var output bytes.Buffer
 	if err := png.Encode(&output, canvas); err != nil {
