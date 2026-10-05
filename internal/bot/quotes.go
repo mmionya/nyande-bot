@@ -16,11 +16,12 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/quotes"
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 )
 
-const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n\nМожно цитировать текст и подписи к медиа, до 1200 символов."
+const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n/quote trigger — показать слово-триггер\n/quote trigger цитата — задать слово для цитирования ответом\n/quote trigger off — отключить триггер\n\nВ группах триггер настраивают администраторы. Можно цитировать текст и подписи к медиа, до 1200 символов."
 
 func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, arguments string) error {
 	say := func(text string) error {
@@ -34,6 +35,44 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 	var q quotes.Quote
 	var err error
 	switch {
+	case len(args) > 0 && strings.EqualFold(args[0], "trigger"):
+		if len(args) > 2 {
+			return say(quoteHelp)
+		}
+		if len(args) == 1 {
+			trigger, err := b.quotes.Trigger(ctx, message.Chat.ID)
+			if err != nil {
+				return err
+			}
+			if trigger == "" {
+				return say("Триггер цитат отключён. Задать: /quote trigger цитата")
+			}
+			return say(fmt.Sprintf("Триггер цитат: %s. Ответь этим словом на сообщение; регистр не важен.", trigger))
+		}
+		admin, err := b.isAdmin(ctx, message)
+		if err != nil {
+			return err
+		}
+		if !admin {
+			return say("Настраивать триггер цитат могут только администраторы чата.")
+		}
+		trigger := args[1]
+		if strings.EqualFold(trigger, silentModerationTrigger) {
+			return say("Это слово занято другой командой бота. Выбери другой триггер.")
+		}
+		if strings.EqualFold(trigger, "off") {
+			trigger = ""
+		}
+		if err := b.quotes.SetTrigger(ctx, message.Chat.ID, trigger); err != nil {
+			if errors.Is(err, quotes.ErrInvalidTrigger) {
+				return say("Триггер — одно слово до 32 символов: буквы, цифры, дефис или подчёркивание.")
+			}
+			return err
+		}
+		if trigger == "" {
+			return say("Триггер цитат отключён. Команда /quote продолжает работать.")
+		}
+		return say(fmt.Sprintf("Триггер сохранён: %s. Ответь только этим словом на сообщение, и я сделаю цитату. Регистр не важен.", trigger))
 	case len(args) == 0 && message.ReplyToMessage != nil:
 		target := message.ReplyToMessage
 		if strings.TrimSpace(target.ContentText()) == "" {
@@ -132,6 +171,20 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 	return err
 }
 
+func (b *Bot) handleQuoteTrigger(ctx context.Context, message *telegram.Message) (bool, error) {
+	if b.quotes == nil || message.ReplyToMessage == nil || message.From == nil || message.From.IsBot || message.SenderChat != nil {
+		return false, nil
+	}
+	trigger, err := b.quotes.Trigger(ctx, message.Chat.ID)
+	if err != nil {
+		return true, err
+	}
+	if trigger == "" || !strings.EqualFold(strings.TrimSpace(message.ContentText()), trigger) {
+		return false, nil
+	}
+	return true, b.quoteCommand(ctx, message, "")
+}
+
 func quoteFromMessage(chatID, savedBy int64, m *telegram.Message) quotes.Quote {
 	q := quotes.Quote{ChatID: chatID, SavedBy: savedBy, MessageID: m.MessageID, Date: m.Date, Text: m.ContentText(), Author: "Неизвестный автор"}
 	if m.From != nil {
@@ -157,55 +210,73 @@ func quoteFromMessage(chatID, savedBy int64, m *telegram.Message) quotes.Quote {
 }
 
 func renderQuoteCard(q quotes.Quote, avatar image.Image) ([]byte, error) {
-	body, err := opentype.NewFace(tomatoRegularFont, &opentype.FaceOptions{Size: 28, DPI: 72, Hinting: font.HintingFull})
-	if err != nil {
-		return nil, err
-	}
-	defer body.Close()
-	name, err := opentype.NewFace(tomatoBoldFont, &opentype.FaceOptions{Size: 24, DPI: 72, Hinting: font.HintingFull})
+	const width, margin = 800, 128
+	name, err := opentype.NewFace(tomatoBoldFont, &opentype.FaceOptions{Size: 36, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		return nil, err
 	}
 	defer name.Close()
-	label, err := opentype.NewFace(tomatoRegularFont, &opentype.FaceOptions{Size: 16, DPI: 72, Hinting: font.HintingFull})
-	if err != nil {
-		return nil, err
+	text := strings.TrimSpace(q.Text)
+	if !strings.HasPrefix(text, "«") || !strings.HasSuffix(text, "»") {
+		text = "«" + text + "»"
 	}
-	defer label.Close()
-	lines := wrapTelegramText(q.Text, body, 656, quotes.MaxTextRunes)
-	height := max(360, 270+len(lines)*39)
-	canvas := image.NewRGBA(image.Rect(0, 0, 800, height))
-	background := color.RGBA{19, 21, 32, 255}
-	accent := color.RGBA{188, 168, 255, 255}
-	muted := color.RGBA{157, 164, 184, 255}
-	fill(canvas, canvas.Bounds(), background)
-	drawRoundedRect(canvas, image.Rect(24, 24, 776, height-24), 24, color.RGBA{31, 34, 49, 255})
-	fill(canvas, image.Rect(52, 60, 56, height-60), accent)
-	drawText(canvas, label, 76, 77, "НЯНДЕ / ЦИТАТНИК", accent)
-	drawText(canvas, label, 660, 77, fmt.Sprintf("#%d", q.ID), muted)
-	for i, line := range lines {
-		drawText(canvas, body, 76, 132+i*39, line, color.RGBA{241, 242, 248, 255})
-	}
-	centerY := height - 103
-	if avatar != nil {
-		drawWordleAvatar(canvas, 106, centerY, 30, avatar)
-	} else {
-		drawCircle(canvas, 106, centerY, 30, color.RGBA{86, 70, 122, 255})
-		initial := "?"
-		if runes := []rune(strings.TrimSpace(q.Author)); len(runes) > 0 {
-			initial = strings.ToUpper(string(runes[0]))
+	author := wrapTelegramText("© "+q.Author, name, width-2*margin, utf8.RuneCountInString(q.Author)+2)
+	nameHeight := name.Metrics().Height.Ceil()
+	var body font.Face
+	var lines []string
+	var lineHeight, blockHeight int
+	for size := 36; ; size -= 2 {
+		body, err = opentype.NewFace(tomatoBoldFont, &opentype.FaceOptions{Size: float64(size), DPI: 72, Hinting: font.HintingFull})
+		if err != nil {
+			return nil, err
 		}
-		drawText(canvas, name, 106-font.MeasureString(name, initial).Ceil()/2, centerY+8, initial, color.White)
+		lines = wrapTelegramText(text, body, width-2*margin, quotes.MaxTextRunes+2)
+		lineHeight = body.Metrics().Height.Ceil()
+		blockHeight = len(lines)*lineHeight + 24 + len(author)*nameHeight
+		if blockHeight <= width-2*margin || size == 24 {
+			break
+		}
+		body.Close()
 	}
-	author := wrapTelegramText(q.Author, name, 570, 1)
-	if len(author) > 0 {
-		drawText(canvas, name, 154, centerY-2, author[0], accent)
+	defer body.Close()
+	height := max(width, blockHeight+2*margin)
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
+	fill(canvas, canvas.Bounds(), color.RGBA{30, 35, 44, 255})
+	if avatar != nil && !avatar.Bounds().Empty() {
+		source := avatar.Bounds()
+		if source.Dx()*height > source.Dy()*width {
+			cropWidth := max(1, source.Dy()*width/height)
+			source.Min.X += (source.Dx() - cropWidth) / 2
+			source.Max.X = source.Min.X + cropWidth
+		} else {
+			cropHeight := max(1, source.Dx()*height/width)
+			source.Min.Y += (source.Dy() - cropHeight) / 2
+			source.Max.Y = source.Min.Y + cropHeight
+		}
+		// ponytail: Fixed-scale resampling approximates a small blur; use a convolution
+		// filter if the blur radius needs to be independent of the scaling filter.
+		softened := image.NewRGBA(image.Rect(0, 0, width/6, height/6))
+		draw.CatmullRom.Scale(softened, softened.Bounds(), avatar, source, draw.Src, nil)
+		draw.BiLinear.Scale(canvas, canvas.Bounds(), softened, softened.Bounds(), draw.Over, nil)
+		draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.NRGBA{A: 72}), image.Point{}, draw.Over)
 	}
-	stamp := "дата неизвестна"
-	if q.Date > 0 {
-		stamp = time.Unix(q.Date, 0).UTC().Format("02.01.2006")
+	outlinedText := func(face font.Face, baseline int, text string) {
+		for dy := -2; dy <= 2; dy++ {
+			for dx := -2; dx <= 2; dx++ {
+				if dx*dx+dy*dy <= 4 {
+					drawText(canvas, face, margin+dx, baseline+dy, text, color.Black)
+				}
+			}
+		}
+		drawText(canvas, face, margin, baseline, text, color.White)
 	}
-	drawText(canvas, label, 154, centerY+23, stamp, muted)
+	top := (height - blockHeight) / 2
+	for i, line := range lines {
+		outlinedText(body, top+body.Metrics().Ascent.Ceil()+i*lineHeight, line)
+	}
+	for i, line := range author {
+		outlinedText(name, top+len(lines)*lineHeight+24+name.Metrics().Ascent.Ceil()+i*nameHeight, line)
+	}
 	var output bytes.Buffer
 	if err := png.Encode(&output, canvas); err != nil {
 		return nil, err

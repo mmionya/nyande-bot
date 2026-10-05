@@ -24,6 +24,8 @@ import (
 	"github.com/mmionya/nyande-bot/resources"
 )
 
+const silentModerationTrigger = "blahajblahajblahaj"
+
 type adminKey struct {
 	ChatID int64
 	UserID int64
@@ -167,7 +169,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "ttt", "description": "крестики-нолики в чате"},
 		{"command": "checkers", "description": "шашки в чате"},
 		{"command": "wordle", "description": "английское слово дня в чате"},
-		{"command": "quote", "description": "цитатник: карточка, random, list, номер"},
+		{"command": "quote", "description": "цитатник: карточка, random, list, номер, trigger"},
 		{"command": "donate", "description": "поддержать бота"},
 		{"command": "stats", "description": "статистика"},
 		{"command": "reset", "description": "очистить историю диалога"},
@@ -262,7 +264,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			}
 			return b.handleLinks(ctx, message, extractURLs(message))
 		}
-		if strings.TrimSpace(message.ContentText()) == "blahajblahajblahaj" {
+		if strings.TrimSpace(message.ContentText()) == silentModerationTrigger {
 			admin, err := b.isAdmin(ctx, message)
 			if err != nil {
 				return err
@@ -369,6 +371,9 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			return err
 		}
 		return nil
+	}
+	if handled, err := b.handleQuoteTrigger(ctx, message); handled {
+		return err
 	}
 	if handled, err := b.handleWordleGuess(ctx, message, text); handled {
 		return err

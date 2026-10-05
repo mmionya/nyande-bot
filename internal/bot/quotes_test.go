@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 	"image"
+	"image/color"
 	"strings"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestQuotePreservesOriginalAuthor(t *testing.T) {
 }
 
 func TestQuoteCardHandlesLongTextAndMissingAvatar(t *testing.T) {
-	for _, content := range []string{"Я не опоздал. Я дал вам время соскучиться.", strings.Repeat("Ш", quotes.MaxTextRunes), strings.Repeat("Кот и код. ", 100)} {
+	for i, content := range []string{"Я не опоздал. Я дал вам время соскучиться.", strings.Repeat("Ш", quotes.MaxTextRunes), strings.Repeat("Кот и код. ", 100)} {
 		data, err := renderQuoteCard(quotes.Quote{ID: 12, Author: "Маша", Text: content, Date: 1700000000}, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -43,8 +44,59 @@ func TestQuoteCardHandlesLongTextAndMissingAvatar(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if format != "png" || card.Bounds().Dx() != 800 || card.Bounds().Dy() < 360 || card.Bounds().Dy() > 4000 {
+		if format != "png" || card.Bounds().Dx() != 800 || card.Bounds().Dy() < 800 || card.Bounds().Dy() > 4000 || i == 0 && card.Bounds().Dy() != 800 {
 			t.Fatalf("invalid card dimensions: %v", card.Bounds())
 		}
+		if i == 1 {
+			changed, err := renderQuoteCard(quotes.Quote{ID: 12, Author: "Маша", Text: strings.Repeat("Ш", quotes.MaxTextRunes-1) + "Я", Date: 1700000000}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Equal(data, changed) {
+				t.Fatal("the last character of a 1200-character quote was clipped")
+			}
+		}
+	}
+}
+
+func TestQuoteCardUsesAvatarAsFullBackground(t *testing.T) {
+	avatar := image.NewRGBA(image.Rect(30, 40, 158, 104))
+	fill(avatar, avatar.Bounds(), color.RGBA{20, 220, 40, 255})
+	fill(avatar, image.Rect(62, 40, 126, 104), color.RGBA{220, 50, 70, 255})
+	data, err := renderQuoteCard(quotes.Quote{Author: "Маша", Text: "Кот и код."}, avatar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted, err := renderQuoteCard(quotes.Quote{Author: "Маша", Text: "«Кот и код.»"}, avatar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, quoted) {
+		t.Fatal("existing quote marks should not be duplicated")
+	}
+	card, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, point := range []image.Point{{0, 0}, {799, 0}, {0, 799}, {799, 799}} {
+		shade := color.RGBAModel.Convert(card.At(point.X, point.Y)).(color.RGBA)
+		if shade.A != 255 || shade.R <= shade.G*2 || shade.R >= 220 {
+			t.Fatalf("avatar should cover the card and be dimmed: %v at %v", shade, point)
+		}
+	}
+	var white, black int
+	for y := 0; y < 800; y++ {
+		for x := 0; x < 800; x++ {
+			shade := color.RGBAModel.Convert(card.At(x, y)).(color.RGBA)
+			if shade.R == 255 && shade.G == 255 && shade.B == 255 {
+				white++
+			}
+			if shade.R == 0 && shade.G == 0 && shade.B == 0 {
+				black++
+			}
+		}
+	}
+	if white == 0 || black == 0 {
+		t.Fatal("quote needs white lettering with a black outline")
 	}
 }
