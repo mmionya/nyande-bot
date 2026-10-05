@@ -62,8 +62,13 @@ func (c *Client) call(ctx context.Context, method string, payload any, result an
 }
 
 func (c *Client) do(ctx context.Context, method, contentType string, body []byte, result any) error {
+	// A lost response may follow a successful send. Retry ambiguous failures only for reads.
+	retryAmbiguous := strings.HasPrefix(method, "get")
 	var last error
 	for attempt := 1; attempt <= maxRequestAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBaseURL+method, bytes.NewReader(body))
 		if err != nil {
 			return err
@@ -71,8 +76,11 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 		request.Header.Set("Content-Type", contentType)
 		response, err := c.http.Do(request)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			last = sanitizeError(err, c.token)
-			if attempt < maxRequestAttempts {
+			if retryAmbiguous && attempt < maxRequestAttempts {
 				time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
 				continue
 			}
@@ -82,7 +90,7 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 		response.Body.Close()
 		if readErr != nil {
 			last = readErr
-			if attempt < maxRequestAttempts {
+			if retryAmbiguous && attempt < maxRequestAttempts {
 				continue
 			}
 			return last
@@ -91,7 +99,7 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 		var raw apiEnvelope[json.RawMessage]
 		if err := json.Unmarshal(responseData, &raw); err != nil {
 			last = fmt.Errorf("Telegram API returned invalid JSON (HTTP %d)", response.StatusCode)
-			if attempt < maxRequestAttempts && response.StatusCode >= 500 {
+			if retryAmbiguous && attempt < maxRequestAttempts && response.StatusCode >= 500 {
 				time.Sleep(time.Duration(attempt) * time.Second)
 				continue
 			}
@@ -111,7 +119,7 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 			Description: raw.Description, RetryAfter: raw.Parameters.RetryAfter,
 		}
 		last = apiErr
-		retryable := response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500
+		retryable := response.StatusCode == http.StatusTooManyRequests || (retryAmbiguous && response.StatusCode >= 500)
 		if !retryable || attempt == maxRequestAttempts {
 			return apiErr
 		}

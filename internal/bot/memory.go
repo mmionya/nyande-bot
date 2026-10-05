@@ -140,7 +140,7 @@ func (b *Bot) memoryTools(message *telegram.Message) []llm.Tool {
 				"required": []string{"memory_id"}, "additionalProperties": false,
 			},
 			Execute: func(ctx context.Context, arguments map[string]string) (string, error) {
-				id, err := strconv.ParseInt(arguments["memory_id"], 10, 64)
+				id, err := strconv.ParseInt(strings.TrimSpace(arguments["memory_id"]), 10, 64)
 				if err != nil || id < 1 {
 					return "Memory was not deleted: invalid memory id.", nil
 				}

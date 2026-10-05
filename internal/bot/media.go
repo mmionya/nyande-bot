@@ -250,7 +250,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	if message.From != nil {
 		userName = message.From.FirstName
 	}
-	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message)}
+	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message), b.createFileTool(message)}
 	tools = append(tools, b.llm.MediaSearchTools()...)
 	tools = append(tools, b.memoryTools(message)...)
 	tools = append(tools, b.chatlogTools(message)...)

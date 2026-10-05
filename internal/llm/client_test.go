@@ -30,6 +30,36 @@ func TestTextToolCallParsingAndCleanup(t *testing.T) {
 	}
 }
 
+func TestToolArgumentsPreserveGeneratedCode(t *testing.T) {
+	const code = "    print(\"Привет & <tag>\", \"C:\\\\work\\\\file.py\")\n\treturn \"</tag>\"\n"
+	encoded, err := json.Marshal(map[string]string{"content": code})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, raw string
+		native    bool
+	}{
+		{"native JSON", string(encoded), true},
+		{"JSON envelope", `<tool_call>{"name":"create_file","arguments":` + string(encoded) + `}</tool_call>`, false},
+		{"legacy XML", "<tool_call>create_file\n<arg_key> content \t</arg_key><arg_value>" + code + "</arg_value>\n</tool_call>", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var arguments any = test.raw
+			if !test.native {
+				calls := parseTextToolCalls(test.raw, 1)
+				if len(calls) != 1 || calls[0].Function.Name != "create_file" {
+					t.Fatalf("unexpected tool calls: %#v", calls)
+				}
+				arguments = calls[0].Function.Arguments
+			}
+			if got := decodeArguments(arguments)["content"]; got != code {
+				t.Fatalf("code changed:\nwant %q\n got %q", code, got)
+			}
+		})
+	}
+}
+
 func TestCleanAnswerRemovesThinkingBlocks(t *testing.T) {
 	if result := formatAnswer("<think>internal</think>Готово"); result != "Готово" {
 		t.Fatalf("unexpected clean answer: %q", result)

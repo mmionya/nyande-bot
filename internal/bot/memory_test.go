@@ -45,7 +45,7 @@ func TestMemoryToolsRememberRecallAndForget(t *testing.T) {
 		t.Fatalf("unexpected recalled memories: %#v", items)
 	}
 	observation, err = tools[1].Execute(context.Background(), map[string]string{
-		"memory_id": "1",
+		"memory_id": " 1\n",
 	})
 	if err != nil || !strings.Contains(observation, "Deleted long-term memory") {
 		t.Fatalf("forget tool result=%q err=%v", observation, err)

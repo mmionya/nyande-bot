@@ -519,7 +519,7 @@ func applicationToolsPrompt(tools []Tool) string {
 		prompt.WriteString(tool.Description)
 		prompt.WriteByte('\n')
 	}
-	prompt.WriteString("Use the native tool-call interface when available. If it is unavailable, call an application tool by outputting exactly <tool_call>tool_name</tool_call>; include <arg_key>key</arg_key><arg_value>value</arg_value> inside the tag only when the tool has arguments. Never claim an action succeeded without calling its tool.\n")
+	prompt.WriteString("Use the native tool-call interface when available. If it is unavailable, output <tool_call>{\"name\":\"tool_name\",\"arguments\":{\"key\":\"value\"}}</tool_call>. Use valid JSON with escaped newlines, quotes and backslashes in strings; encode < as \\u003c and > as \\u003e inside argument values so they cannot close the tool tag. Use an empty arguments object for tools without arguments. Never claim an action succeeded without calling its tool.\n")
 	return prompt.String()
 }
 
@@ -619,7 +619,7 @@ var (
 	completeToolPattern = regexp.MustCompile(`(?is)<tool_call>.*?</tool_call>`)
 	jsonToolPattern     = regexp.MustCompile(`(?is)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 	toolPattern         = regexp.MustCompile(`(?is)<tool_call>\s*([a-zA-Z0-9_]+)\s*(.*?)</tool_call>`)
-	argumentPattern     = regexp.MustCompile(`(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>\s*(.*?)\s*</arg_value>`)
+	argumentPattern     = regexp.MustCompile(`(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>`)
 	thinkingPattern     = regexp.MustCompile(`(?is)<(?:analysis|think)>.*?</(?:analysis|think)>`)
 	controlPattern      = regexp.MustCompile(`(?i)<\|(?:channel|im_start|im_end|end|eot|assistant|user|system)\|>|</?(?:analysis|think)>`)
 	repeatedAsterisks   = regexp.MustCompile(`\*{2,}`)
@@ -665,7 +665,7 @@ func parseTextToolCalls(content string, step int) []toolCall {
 		arguments := map[string]string{}
 		for _, argument := range argumentPattern.FindAllStringSubmatch(payload, -1) {
 			if len(argument) == 3 {
-				arguments[strings.TrimSpace(argument[1])] = strings.TrimSpace(argument[2])
+				arguments[strings.TrimSpace(argument[1])] = argument[2]
 			}
 		}
 		if len(arguments) == 0 && strings.HasPrefix(payload, "{") {
