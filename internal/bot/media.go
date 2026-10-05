@@ -272,7 +272,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 func (b *Bot) shouldHandleGroupLLM(message *telegram.Message) bool {
 	reply := message.ReplyToMessage
 	triggered := containsTriggerWord(message.ContentText(), b.cfg.LLMTriggerWords)
-	if reply != nil && b.media != nil && b.media.Has(message.Chat.ID, reply.MessageID) {
+	if b.isQuoteCard(reply) || (reply != nil && b.media != nil && b.media.Has(message.Chat.ID, reply.MessageID)) {
 		return triggered
 	}
 	if triggered {

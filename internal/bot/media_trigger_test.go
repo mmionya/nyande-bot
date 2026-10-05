@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mmionya/nyande-bot/internal/config"
@@ -75,6 +76,51 @@ func TestGroupLLMRequiresTriggerOnlyForDownloadedMediaReply(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if got := application.shouldHandleGroupLLM(&test.message); got != test.want {
+				t.Fatalf("shouldHandleGroupLLM() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestGroupLLMQuoteRepliesWithoutMediaCache(t *testing.T) {
+	application := &Bot{
+		cfg:      config.Config{LLMTriggerWords: []string{"мяу"}},
+		identity: telegram.User{ID: 99, Username: "nyande_bot"},
+	}
+	botUser := &telegram.User{ID: 99, IsBot: true}
+	otherUser := &telegram.User{ID: 7}
+	const caption = "Цитата #12 · /quote random"
+	for _, test := range []struct {
+		name, caption, text string
+		from                *telegram.User
+		photo, want         bool
+	}{
+		{"quote reply", caption, "ахах", botUser, true, false},
+		{"quote reply with mention", caption, "@nyande_bot ахах", botUser, true, false},
+		{"quote reply with trigger", caption, "Мяу, объясни", botUser, true, true},
+		{"quote reply with partial trigger", caption, "мяукни", botUser, true, false},
+		{"large quote ID", "Цитата #9223372036854775807 · /quote random", "ахах", botUser, true, false},
+		{"ordinary bot photo", "Вот фото", "ахах", botUser, true, true},
+		{"quote help text", caption, "ахах", botUser, false, true},
+		{"caption from another user", caption, "@nyande_bot объясни", otherUser, true, true},
+		{"missing sender", caption, "@nyande_bot объясни", nil, true, true},
+		{"zero quote ID", "Цитата #0 · /quote random", "ахах", botUser, true, true},
+		{"invalid quote ID", "Цитата #abc · /quote random", "ахах", botUser, true, true},
+		{"incomplete caption", "Цитата #12", "ахах", botUser, true, true},
+		{"extra caption text", caption + " extra", "ахах", botUser, true, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reply := &telegram.Message{MessageID: 10, From: test.from, Caption: test.caption}
+			if test.photo {
+				reply.Photo = []telegram.PhotoSize{{FileID: "quote-photo"}}
+			}
+			message := &telegram.Message{
+				Chat: telegram.Chat{ID: -100123, Type: "supergroup"}, Text: test.text, ReplyToMessage: reply,
+			}
+			if strings.HasPrefix(test.text, "@nyande_bot") {
+				message.Entities = []telegram.MessageEntity{{Type: "mention", Offset: 0, Length: 11}}
+			}
+			if got := application.shouldHandleGroupLLM(message); got != test.want {
 				t.Fatalf("shouldHandleGroupLLM() = %t, want %t", got, test.want)
 			}
 		})

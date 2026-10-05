@@ -28,6 +28,8 @@ var quoteFontData []byte
 
 var quoteFont = mustOpenTypeFont(quoteFontData)
 
+const quoteCaptionFormat = "Цитата #%d · /quote random"
+
 const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n/quote trigger — показать слово-триггер\n/quote trigger цитата — задать слово для цитирования ответом\n/quote trigger off — отключить триггер\n\nВ группах триггер настраивают администраторы. Можно цитировать текст и подписи к медиа, до 1200 символов.\n\nЭмодзи: Twemoji — Twitter, Inc. и соавторы.\nИсточник: https://github.com/jdecked/twemoji\nЛицензия CC BY 4.0: https://creativecommons.org/licenses/by/4.0/"
 
 func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, arguments string) error {
@@ -173,9 +175,19 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 	}
 	_, err = b.telegram.SendUpload(ctx, message.Chat.ID, telegram.Upload{
 		Kind: "photo", Name: fmt.Sprintf("quote-%d.png", q.ID), MIME: "image/png", Data: data,
-		Caption: fmt.Sprintf("Цитата #%d · /quote random", q.ID),
+		Caption: fmt.Sprintf(quoteCaptionFormat, q.ID),
 	}, message.MessageID)
 	return err
+}
+
+func (b *Bot) isQuoteCard(message *telegram.Message) bool {
+	if message == nil || message.From == nil || message.From.ID != b.identity.ID || len(message.Photo) == 0 {
+		return false
+	}
+	// The reply includes the caption, so cards remain recognizable after a restart.
+	var id int64
+	_, err := fmt.Sscanf(message.Caption, quoteCaptionFormat, &id)
+	return err == nil && id > 0 && message.Caption == fmt.Sprintf(quoteCaptionFormat, id)
 }
 
 func (b *Bot) handleQuoteTrigger(ctx context.Context, message *telegram.Message) (bool, error) {

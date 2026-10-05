@@ -163,8 +163,8 @@ feature.
 In private chats, the bot responds to ordinary text and media messages. In a
 group, it can be invoked by mentioning its `@username`, replying to one of its
 messages, or using one of the comma-separated `LLM_TRIGGER_WORDS` (matched
-case-insensitively). Replies to media downloaded and sent by the bot are handled
-only when they contain one of those trigger words.
+case-insensitively). Replies to media downloaded and sent by the bot, or to its
+quote cards, are handled only when they contain one of those trigger words.
 
 `LLM_VIDEO_FRAME_COUNT` controls how many evenly spaced video frames are sent
 to the model and accepts values from 1 to 6. `LLM_TIMEZONE` accepts an IANA
