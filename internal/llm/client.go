@@ -25,6 +25,8 @@ const maxAgentSteps = 3
 
 const serverSearchRetryDelay = 5 * time.Minute
 
+var errAnswerLimit = errors.New("ответ не поместился в доступный лимит; попроси разбить его на части")
+
 type Image struct {
 	MIME string
 	Data []byte
@@ -96,11 +98,9 @@ type completionResponse struct {
 					Content string `json:"content"`
 				} `json:"url_citation"`
 			} `json:"annotations"`
-			Role             string     `json:"role"`
-			Content          string     `json:"content"`
-			ReasoningContent string     `json:"reasoning_content,omitempty"`
-			Reasoning        string     `json:"reasoning,omitempty"`
-			ToolCalls        []toolCall `json:"tool_calls"`
+			Role      string     `json:"role"`
+			Content   string     `json:"content"`
+			ToolCalls []toolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
@@ -252,7 +252,7 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 			}
 		}
 		if err != nil {
-			if step == 0 && len(tools) > 0 && ctx.Err() == nil {
+			if step == 0 && len(tools) > 0 && ctx.Err() == nil && !errors.Is(err, errAnswerLimit) {
 				log.Printf("[llm] request with tools failed, retrying without tools: %v", err)
 				response, err = c.complete(ctx, messages, nil, false)
 				tools = nil
@@ -272,25 +272,16 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 		if len(calls) == 0 {
 			answer := formatAnswer(choice.Message.Content)
 			if answer == "" {
-				reasoning := strings.TrimSpace(firstString(choice.Message.ReasoningContent, choice.Message.Reasoning))
-				if reasoning != "" {
-					answer = formatAnswer(reasoning)
-				}
-			}
-			if answer == "" {
-				log.Printf("[llm] empty answer: chat=%d finish_reason=%s content_len=%d reasoning_len=%d",
-					request.ChatID, choice.FinishReason, len(choice.Message.Content), len(choice.Message.ReasoningContent))
-				if choice.FinishReason == "length" {
-					return "", fmt.Errorf("лимит токенов исчерпан (finish_reason=length, max_tokens=%d). Увеличьте LLM_MAX_TOKENS в .env", c.cfg.LLMMaxTokens)
-				}
-				return "", errors.New("LLM returned an empty answer")
+				log.Printf("[llm] empty answer: chat=%d finish_reason=%s content_len=%d",
+					request.ChatID, choice.FinishReason, len(choice.Message.Content))
+				return "", errors.New("модель не вернула готовый ответ; попробуй ещё раз или разбей запрос на части")
 			}
 			c.saveHistory(request.ChatID, userText, answer)
 			log.Printf("[llm] completed chat=%d elapsed_ms=%d answer_chars=%d", request.ChatID, time.Since(started).Milliseconds(), len([]rune(answer)))
 			return answer, nil
 		}
 		messages = append(messages, chatMessage{
-			Role: "assistant", Content: choice.Message.Content, ToolCalls: calls,
+			Role: "assistant", Content: stripReasoning(choice.Message.Content), ToolCalls: calls,
 		})
 		for _, call := range calls {
 			toolStarted := time.Now()
@@ -345,25 +336,34 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	}
 	answer := formatAnswer(response.Choices[0].Message.Content)
 	if answer == "" {
-		reasoning := strings.TrimSpace(firstString(response.Choices[0].Message.ReasoningContent, response.Choices[0].Message.Reasoning))
-		if reasoning != "" {
-			answer = formatAnswer(reasoning)
-		}
-	}
-	if answer == "" {
-		if response.Choices[0].FinishReason == "length" {
-			return "", fmt.Errorf("лимит токенов исчерпан (finish_reason=length, max_tokens=%d). Увеличьте LLM_MAX_TOKENS в .env", c.cfg.LLMMaxTokens)
-		}
-		return "", errors.New("LLM returned an empty final answer")
+		return "", errors.New("модель не вернула готовый ответ; попробуй ещё раз или разбей запрос на части")
 	}
 	c.saveHistory(request.ChatID, userText, answer)
 	return answer, nil
 }
 
 func (c *Client) complete(ctx context.Context, messages []chatMessage, tools []map[string]any, allowTools bool) (completionResponse, error) {
+	maxTokens := c.cfg.LLMMaxTokens
+	// ponytail: one retry, capped at 32768 tokens; larger outputs need split requests
+	// or an explicitly higher LLM_MAX_TOKENS. Never replay already executed tools.
+	retryTokens := min(32768, max(8192, min(maxTokens, 16384)*2))
+	for {
+		response, err := c.completeAttempt(ctx, messages, tools, allowTools, maxTokens)
+		if err != nil || len(response.Choices) == 0 || response.Choices[0].FinishReason != "length" {
+			return response, err
+		}
+		if retryTokens <= maxTokens {
+			return completionResponse{}, errAnswerLimit
+		}
+		log.Printf("[llm] output limit reached; retrying current completion with max_tokens=%d", retryTokens)
+		maxTokens = retryTokens
+	}
+}
+
+func (c *Client) completeAttempt(ctx context.Context, messages []chatMessage, tools []map[string]any, allowTools bool, maxTokens int) (completionResponse, error) {
 	payload := map[string]any{
 		"model": c.cfg.LLMModel, "messages": messages,
-		"temperature": c.cfg.LLMTemperature, "max_tokens": c.cfg.LLMMaxTokens,
+		"temperature": c.cfg.LLMTemperature, "max_tokens": maxTokens,
 	}
 	if allowTools && len(tools) > 0 {
 		payload["tools"] = tools
@@ -638,13 +638,14 @@ var (
 	jsonToolPattern     = regexp.MustCompile(`(?is)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 	toolPattern         = regexp.MustCompile(`(?is)<tool_call>\s*([a-zA-Z0-9_]+)\s*(.*?)</tool_call>`)
 	argumentPattern     = regexp.MustCompile(`(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>`)
-	thinkingPattern     = regexp.MustCompile(`(?is)<(?:analysis|think)>.*?</(?:analysis|think)>`)
-	controlPattern      = regexp.MustCompile(`(?i)<\|(?:channel|im_start|im_end|end|eot|assistant|user|system)\|>|</?(?:analysis|think)>`)
+	reasoningPattern    = regexp.MustCompile(`(?is)<tool_call>.*?</tool_call>|</?(?:analysis|think)>|<\|?channel\|>\s*(?:analysis|final)\b`)
+	controlPattern      = regexp.MustCompile(`(?i)<\|(?:channel|im_start|im_end|im_sep|start|message|end|eot|assistant|user|system)\|>`)
 	repeatedAsterisks   = regexp.MustCompile(`\*{2,}`)
 	truncatedKaomoji    = regexp.MustCompile(`>[wWoOvV/^_.-]{1,8}$`)
 )
 
 func parseTextToolCalls(content string, step int) []toolCall {
+	content = stripReasoning(content)
 	var result []toolCall
 
 	// Match JSON-format tool calls: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
@@ -703,15 +704,51 @@ func parseTextToolCalls(content string, step int) []toolCall {
 	return result
 }
 
-func formatAnswer(value string) string {
-	lower := strings.ToLower(value)
-	for _, marker := range []string{"<|channel|>final", "<channel|>final"} {
-		if index := strings.LastIndex(lower, marker); index >= 0 {
-			value = value[index+len(marker):]
-			lower = strings.ToLower(value)
+// Complete tool payloads are opaque: generated code may contain literal reasoning
+// tags. Tool calls inside a reasoning block are discarded with that block.
+func stripReasoning(value string) string {
+	var visible strings.Builder
+	depth, previous := 0, 0
+	analysis := false
+	for _, match := range reasoningPattern.FindAllStringIndex(value, -1) {
+		if depth == 0 && !analysis {
+			visible.WriteString(value[previous:match[0]])
+		}
+		token := value[match[0]:match[1]]
+		previous = match[1]
+		if len(token) >= len("<tool_call>") && strings.EqualFold(token[:len("<tool_call>")], "<tool_call>") {
+			if depth == 0 && !analysis {
+				visible.WriteString(token)
+			}
+			continue
+		}
+		switch strings.ToLower(token) {
+		case "<think>", "<analysis>":
+			depth++
+		case "</think>", "</analysis>":
+			if depth > 0 {
+				depth--
+			} else {
+				// Some providers omit the opening tag; only text after the close is public.
+				visible.Reset()
+			}
+		default:
+			if depth == 0 {
+				analysis = strings.HasSuffix(strings.ToLower(token), "analysis")
+				if !analysis {
+					visible.Reset()
+				}
+			}
 		}
 	}
-	value = thinkingPattern.ReplaceAllString(value, "")
+	if depth == 0 && !analysis {
+		visible.WriteString(value[previous:])
+	}
+	return visible.String()
+}
+
+func formatAnswer(value string) string {
+	value = stripReasoning(value)
 	value = completeToolPattern.ReplaceAllString(value, "")
 	if index := strings.Index(strings.ToLower(value), "<tool_call>"); index >= 0 {
 		value = value[:index]
@@ -731,13 +768,4 @@ func truncate(value string, maximum int) string {
 		return value
 	}
 	return value[:maximum] + "…"
-}
-
-func firstString(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
