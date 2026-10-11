@@ -1,14 +1,19 @@
 package llm
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/internal/storagecrypt"
 )
 
 const historyFileVersion = 1
+const encryptedHistoryPrefix = "nyande-llm-history-v2\n"
 
 type persistedHistory struct {
 	Version int                     `json:"version"`
@@ -20,12 +25,26 @@ func (c *Client) loadHistory() error {
 	if path == "" {
 		return nil
 	}
+	cipher, err := storagecrypt.New(c.cfg.StorageEncryptionKey)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
+	}
+	encrypted := bytes.HasPrefix(data, []byte(encryptedHistoryPrefix))
+	if encrypted {
+		if cipher == nil {
+			return errors.New("encrypted LLM history requires the storage encryption key")
+		}
+		data, err = cipher.Open(data[len(encryptedHistoryPrefix):], []byte(encryptedHistoryPrefix+filepath.Base(path)))
+		if err != nil {
+			return err
+		}
 	}
 	var stored persistedHistory
 	if err := json.Unmarshal(data, &stored); err != nil {
@@ -50,12 +69,18 @@ func (c *Client) loadHistory() error {
 			c.history[chatID] = cleaned
 		}
 	}
+	if cipher != nil && !encrypted {
+		return c.persistHistoryLocked()
+	}
 	return nil
 }
 
 // persistHistoryLocked writes the current history atomically. The caller must
 // hold c.mu so concurrent chats cannot overwrite a newer snapshot.
 func (c *Client) persistHistoryLocked() error {
+	if c.historyErr != nil {
+		return c.historyErr
+	}
 	path := strings.TrimSpace(c.cfg.LLMHistoryFile)
 	if path == "" {
 		return nil
@@ -67,15 +92,39 @@ func (c *Client) persistHistoryLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	cipher, err := storagecrypt.New(c.cfg.StorageEncryptionKey)
+	if err != nil {
 		return err
 	}
-	temporary := path + ".tmp"
-	if err := os.WriteFile(temporary, data, 0o600); err != nil {
+	if cipher != nil {
+		data = append([]byte(encryptedHistoryPrefix), cipher.Seal(data, []byte(encryptedHistoryPrefix+filepath.Base(path)))...)
+	}
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, path); err != nil {
+	parent, err := os.Open(directory)
+	if err != nil {
 		return err
 	}
-	return nil
+	defer parent.Close()
+	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporary.Name())
+	defer temporary.Close()
+	if _, err := temporary.Write(data); err != nil {
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary.Name(), path); err != nil {
+		return err
+	}
+	return parent.Sync()
 }

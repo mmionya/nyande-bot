@@ -166,15 +166,50 @@ messages, or using one of the comma-separated `LLM_TRIGGER_WORDS` (matched
 case-insensitively). Replies to media downloaded and sent by the bot, or to its
 quote cards, are handled only when they contain one of those trigger words.
 
+When replying to a message, the LLM also receives that message's text or caption
+and author as quoted context, up to 4000 Unicode characters. Only the immediate
+parent is included. It is marked as untrusted context rather than a new user
+instruction. The quoted context itself is not appended to saved LLM history;
+the model's final answer may still refer to it.
+
 `LLM_VIDEO_FRAME_COUNT` controls how many evenly spaced video frames are sent
 to the model and accepts values from 1 to 6. `LLM_TIMEZONE` accepts an IANA
 timezone such as `Asia/Almaty` or a UTC offset such as `+05:00`.
 
-Chat messages are recorded in an SQLite database with FTS5 search at `CHAT_LOG_FILE`.
+Chat messages are recorded in an SQLite database at `CHAT_LOG_FILE`.
 The LLM can access historical messages via the `search_chat_messages` tool and inspect
 recent chat context via `get_recent_messages`. To enable the bot to receive all group
 messages (even when unaddressed), disable Privacy Mode in `@BotFather` (`/setprivacy -> Disable`)
 or make the bot an administrator in the group. Set `CHAT_LOG_ENABLED=false` to disable chat logging.
+
+Archive lookup is available to participants only within the current chat. The
+chat ID comes from the Telegram message and cannot be selected by tool arguments.
+Search returns recent matches for words or a phrase. It scans one chat's stored
+messages (normally capped at `CHAT_LOG_MAX_PER_CHAT`) instead of keeping a
+plaintext full-text index, so very large archives may take longer to search.
+
+Set `DATA_ENCRYPTION_KEY_FILE` to a separately stored, random **32-byte binary key**
+to enable AES-256-GCM encryption of archive content and LLM conversation history
+(including Discord's separate history). The key must have owner-only permissions
+such as `0600`. It is never generated or replaced automatically. Keep a protected
+backup of the key separately from database backups: losing it makes the encrypted
+data unreadable.
+
+Existing plaintext archives and histories are migrated at startup. Archive texts,
+author names, usernames and user IDs are encrypted; chat IDs, message IDs and dates
+remain SQLite metadata. The old plaintext search index is removed and SQLite is
+compacted. History files keep their names but contain encrypted binary data;
+preserve their basenames when restoring backups. Missing or incorrect keys and
+damaged encrypted records are rejected rather than overwritten with empty data.
+Use private data directories (`0700`) and owner-only data files (`0600`). Existing
+plaintext backups need separate encryption or removal; migration cannot erase
+copies in external snapshots or previously freed disk blocks.
+
+This option covers the message archive and short LLM history. Long-term facts,
+saved quotes and reminders use separate databases; protect their file permissions
+too. Encryption at rest does not hide data from the running bot or a server
+administrator with the key. Context needed to answer a request is still sent to
+the configured LLM provider.
 
 See [`.env.example`](.env.example) for every available setting. The `.env` file
 is ignored by Git; never publish bot tokens or API keys.

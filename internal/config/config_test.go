@@ -1,10 +1,34 @@
 package config
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestStorageEncryptionKeyConfiguration(t *testing.T) {
+	t.Setenv("BOT_TOKEN", "test")
+	t.Setenv("LLM_ENABLED", "false")
+	path := filepath.Join(t.TempDir(), "storage.key")
+	t.Setenv("DATA_ENCRYPTION_KEY_FILE", path)
+	if _, err := Load(); err == nil {
+		t.Fatal("missing encryption key must prevent startup")
+	}
+	key := bytes.Repeat([]byte{71}, 32)
+	if err := os.WriteFile(path, key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil || !bytes.Equal(cfg.StorageEncryptionKey, key) {
+		t.Fatalf("encryption key not loaded: %v", err)
+	}
+	if strings.Contains(cfg.String(), string(key)) {
+		t.Fatal("configuration summary exposes the encryption key")
+	}
+}
 
 func TestEnvList(t *testing.T) {
 	t.Setenv("TEST_TRIGGER_WORDS", " Мяу, нянде;МЯУ\nэй бот ")

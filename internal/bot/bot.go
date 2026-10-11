@@ -86,7 +86,7 @@ func New(cfg config.Config) (*Bot, error) {
 	}
 	var chatlogStore *chatlog.Store
 	if cfg.ChatLogEnabled {
-		chatlogStore, err = chatlog.Open(cfg.ChatLogFile, cfg.ChatLogMaxPerChat)
+		chatlogStore, err = chatlog.Open(cfg.ChatLogFile, cfg.ChatLogMaxPerChat, cfg.StorageEncryptionKey)
 		if err != nil {
 			if memories != nil {
 				_ = memories.Close()

@@ -10,7 +10,7 @@ import (
 func TestChatLogStoreSaveAndSearch(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "test-chatlog.db")
-	store, err := Open(path, 100)
+	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestChatLogStoreSaveAndSearch(t *testing.T) {
 func TestChatLogStoreRecent(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "test-recent.db")
-	store, err := Open(path, 100)
+	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestChatLogStoreRecent(t *testing.T) {
 func TestChatLogStoreUpdateExistingMessage(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "test-update.db")
-	store, err := Open(path, 100)
+	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}

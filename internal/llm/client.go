@@ -61,6 +61,7 @@ type Client struct {
 	http                *http.Client
 	mu                  sync.Mutex
 	history             map[int64][]chatMessage
+	historyErr          error
 	serverSearchRetryAt time.Time // guarded by mu
 }
 
@@ -118,7 +119,8 @@ func New(cfg config.Config) *Client {
 		history: make(map[int64][]chatMessage),
 	}
 	if err := client.loadHistory(); err != nil {
-		log.Printf("[llm] could not load history: %v", err)
+		client.historyErr = fmt.Errorf("LLM history unavailable; refusing to overwrite stored history: %w", err)
+		log.Printf("[llm] %v", client.historyErr)
 	}
 	return client
 }
@@ -130,6 +132,10 @@ func (c *Client) Enabled() bool {
 func (c *Client) Reset(chatID int64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.historyErr != nil {
+		log.Printf("[llm] cannot reset history: %v", c.historyErr)
+		return false
+	}
 	_, exists := c.history[chatID]
 	delete(c.history, chatID)
 	if exists {
@@ -141,6 +147,9 @@ func (c *Client) Reset(chatID int64) bool {
 }
 
 func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
+	if c.historyErr != nil {
+		return "", c.historyErr
+	}
 	if !c.cfg.LLMEnabled {
 		return "", errors.New("LLM is disabled")
 	}
@@ -398,6 +407,10 @@ func (c *Client) complete(ctx context.Context, messages []chatMessage, tools []m
 func (c *Client) saveHistory(chatID int64, user, assistant string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.historyErr != nil {
+		log.Printf("[llm] cannot save history: %v", c.historyErr)
+		return
+	}
 	history := append(c.history[chatID],
 		chatMessage{Role: "user", Content: user},
 		chatMessage{Role: "assistant", Content: assistant},

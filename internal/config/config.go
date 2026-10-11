@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mmionya/nyande-bot/internal/access"
+	"github.com/mmionya/nyande-bot/internal/storagecrypt"
 )
 
 type Config struct {
@@ -71,6 +72,7 @@ type Config struct {
 	ChatLogMaxPerChat      int
 	ReminderDBFile         string
 	QuoteDBFile            string
+	StorageEncryptionKey   []byte
 }
 
 func Load() (Config, error) {
@@ -146,6 +148,13 @@ func Load() (Config, error) {
 				return Config{}, fmt.Errorf("%s: %w", name, err)
 			}
 		}
+	}
+	if path := strings.TrimSpace(os.Getenv("DATA_ENCRYPTION_KEY_FILE")); path != "" {
+		key, err := storagecrypt.ReadKeyFile(path)
+		if err != nil {
+			return Config{}, fmt.Errorf("load DATA_ENCRYPTION_KEY_FILE: %w", err)
+		}
+		cfg.StorageEncryptionKey = key
 	}
 	return cfg, nil
 }

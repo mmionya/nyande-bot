@@ -23,7 +23,7 @@ func TestChatlogToolsNilWhenNoStore(t *testing.T) {
 func TestChatlogToolsExecution(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "test-tools.db")
-	store, err := chatlog.Open(path, 100)
+	store, err := chatlog.Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
@@ -82,7 +82,11 @@ func TestChatlogToolsExecution(t *testing.T) {
 	})
 
 	// Search for "кино"
-	resSearch, err := searchTool.Execute(ctx, map[string]string{"query": "кино"})
+	// Tool arguments cannot select a different chat, even if the model invents them.
+	b.saveChatMessage(ctx, &telegram.Message{
+		Chat: telegram.Chat{ID: -2002}, MessageID: 3, Text: "кино: сообщение другого чата", Date: time.Now().Unix(),
+	})
+	resSearch, err := searchTool.Execute(ctx, map[string]string{"query": "кино", "chat_id": "-2002"})
 	if err != nil {
 		t.Fatalf("search execute error: %v", err)
 	}
@@ -91,7 +95,7 @@ func TestChatlogToolsExecution(t *testing.T) {
 	}
 
 	// Test recent tool
-	resRecent, err := recentTool.Execute(ctx, map[string]string{"limit": "5"})
+	resRecent, err := recentTool.Execute(ctx, map[string]string{"limit": "5", "chat_id": "-2002"})
 	if err != nil {
 		t.Fatalf("recent execute error: %v", err)
 	}
@@ -103,7 +107,7 @@ func TestChatlogToolsExecution(t *testing.T) {
 func TestSaveChatMessageIgnoresEmpty(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "test-empty.db")
-	store, err := chatlog.Open(path, 100)
+	store, err := chatlog.Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
