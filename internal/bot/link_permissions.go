@@ -17,12 +17,8 @@ func (b *Bot) handleLinkPermissionCommand(ctx context.Context, message *telegram
 	if !b.silentModeration(message.Chat.ID) || message.IsAutomaticForward || message.ForwardOrigin != nil {
 		return false, nil
 	}
-	command, args, ok := parseCommand(strings.TrimSpace(message.ContentText()))
+	command, args, ok := parseCommand(strings.TrimSpace(message.ContentText()), b.identity.Username)
 	if !ok || (command != "permitlinks" && command != "revokelinks") {
-		return false, nil
-	}
-	token := strings.Fields(message.ContentText())[0]
-	if _, username, addressed := strings.Cut(token, "@"); addressed && (b.identity.Username == "" || !strings.EqualFold(username, b.identity.Username)) {
 		return false, nil
 	}
 	admin, err := b.isAdmin(ctx, message)

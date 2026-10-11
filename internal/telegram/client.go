@@ -154,7 +154,7 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64) ([]Update, error)
 	var result []Update
 	err := c.call(ctx, "getUpdates", map[string]any{
 		"offset": offset, "timeout": 50,
-		"allowed_updates": []string{"message", "callback_query", "pre_checkout_query"},
+		"allowed_updates": []string{"message", "edited_message", "callback_query", "pre_checkout_query"},
 	}, &result)
 	return result, err
 }

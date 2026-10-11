@@ -129,3 +129,22 @@ func TestSaveChatMessageIgnoresEmpty(t *testing.T) {
 		t.Fatalf("expected 0 messages saved, got %d", len(msgs))
 	}
 }
+
+func TestEditedMessageRemovesArchivedCaption(t *testing.T) {
+	ctx := context.Background()
+	store, err := chatlog.Open(filepath.Join(t.TempDir(), "archive.db"), 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	b := &Bot{chatlog: store}
+	message := &telegram.Message{Chat: telegram.Chat{ID: 100}, MessageID: 1, Caption: "old caption", Photo: []telegram.PhotoSize{{FileID: "photo"}}}
+	b.saveChatMessage(ctx, message)
+	message.Caption = ""
+	if err := b.HandleUpdate(ctx, telegram.Update{EditedMessage: message}); err != nil {
+		t.Fatal(err)
+	}
+	if messages, err := store.Recent(ctx, 100, 10); err != nil || len(messages) != 0 {
+		t.Fatalf("removed caption retained: %#v, %v", messages, err)
+	}
+}

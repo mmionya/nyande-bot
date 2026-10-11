@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -16,6 +17,49 @@ import (
 	longmemory "github.com/mmionya/nyande-bot/internal/memory"
 	"github.com/mmionya/nyande-bot/internal/telegram"
 )
+
+func TestCommandsForAnotherBotCannotDeleteMemories(t *testing.T) {
+	ctx := context.Background()
+	store, err := longmemory.Open(filepath.Join(t.TempDir(), "memory.db"), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	b := &Bot{memories: store, telegram: telegram.New("test"), state: NewState(), identity: telegram.User{Username: "nyande_bot"}}
+	requests := 0
+	previous := http.DefaultTransport
+	http.DefaultTransport = moderationTransport(func(r *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":{"message_id":1}}`))}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	for _, chat := range []telegram.Chat{{ID: 7, Type: "private"}, {ID: -1, Type: "supergroup"}} {
+		if _, _, err := store.Remember(ctx, chat.ID, 7, "Илья", "Предпочитает короткие ответы"); err != nil {
+			t.Fatal(err)
+		}
+		message := &telegram.Message{Chat: chat, From: &telegram.User{ID: 7}}
+		before := requests
+		for _, text := range []string{"/forget_all@other_bot", "/ping@other_bot мяу https://example.com"} {
+			message.Text = text
+			if err := b.HandleUpdate(ctx, telegram.Update{Message: message}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if items, err := store.List(ctx, chat.ID, 7, 10); err != nil || len(items) != 1 {
+			t.Fatalf("another bot's command deleted memory: items=%v err=%v", items, err)
+		}
+		if requests != before {
+			t.Fatal("another bot's command caused a Telegram request")
+		}
+		message.Text = "/forget_all@NYANDE_BOT"
+		if err := b.HandleUpdate(ctx, telegram.Update{Message: message}); err != nil {
+			t.Fatal(err)
+		}
+		if items, err := store.List(ctx, chat.ID, 7, 10); err != nil || len(items) != 0 || requests != before+1 {
+			t.Fatalf("own command did not delete memory and confirm it: items=%v requests=%d err=%v", items, requests-before, err)
+		}
+	}
+}
 
 func TestMemoryToolsRememberRecallAndForget(t *testing.T) {
 	store, err := longmemory.Open(filepath.Join(t.TempDir(), "memory.db"), 10)

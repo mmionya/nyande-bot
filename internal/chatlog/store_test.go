@@ -1,11 +1,62 @@
 package chatlog
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestChatLogRemovedCaptionAndRetention(t *testing.T) {
+	for _, key := range [][]byte{nil, bytes.Repeat([]byte{0x42}, 32)} {
+		t.Run(fmt.Sprintf("encrypted=%t", key != nil), func(t *testing.T) {
+			ctx := context.Background()
+			store, err := Open(filepath.Join(t.TempDir(), "archive.db"), 3, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			msg := Message{ChatID: 10, MessageID: 1, Text: "caption", Date: time.Unix(1700000000, 0)}
+			if err := store.Save(ctx, msg); err != nil {
+				t.Fatal(err)
+			}
+			other := msg
+			other.ChatID = 20
+			if err := store.Save(ctx, other); err != nil {
+				t.Fatal(err)
+			}
+			msg.Text = " \t\n"
+			if err := store.Save(ctx, msg); err != nil {
+				t.Fatal(err)
+			}
+			if matches, err := store.Search(ctx, 10, "caption", 10); err != nil || len(matches) != 0 {
+				t.Fatalf("removed caption remains searchable: %#v, %v", matches, err)
+			}
+			if matches, err := store.Recent(ctx, 20, 10); err != nil || len(matches) != 1 {
+				t.Fatalf("caption removal affected another chat: %#v, %v", matches, err)
+			}
+			// IDs need not be consecutive: e.g. outgoing bot messages use the even IDs.
+			for id := 1; id < 10; id += 2 {
+				msg.MessageID, msg.Text = id, "retained text"
+				if err := store.Save(ctx, msg); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if recent, err := store.Recent(ctx, 10, 50); err != nil || len(recent) != 3 || recent[0].MessageID != 5 || recent[2].MessageID != 9 {
+				t.Fatalf("retention ignored sparse IDs or chronology: %#v, %v", recent, err)
+			}
+			msg.MessageID, msg.Text = 1, "edited old message"
+			if err := store.Save(ctx, msg); err != nil {
+				t.Fatal(err)
+			}
+			if recent, err := store.Recent(ctx, 10, 50); err != nil || len(recent) != 3 || recent[0].MessageID != 5 {
+				t.Fatalf("old edit displaced newer messages: %#v, %v", recent, err)
+			}
+		})
+	}
+}
 
 func TestChatLogStoreSaveAndSearch(t *testing.T) {
 	ctx := context.Background()

@@ -314,7 +314,8 @@ func (s *Store) scan(rows *sql.Rows) (Message, error) {
 func (s *Store) Save(ctx context.Context, msg Message) error {
 	msg.Text = strings.TrimSpace(msg.Text)
 	if msg.Text == "" {
-		return nil
+		_, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE chat_id = ? AND message_id = ?`, msg.ChatID, msg.MessageID)
+		return err
 	}
 	date := msg.Date.UTC().Unix()
 	if date <= 0 {
@@ -332,17 +333,16 @@ func (s *Store) Save(ctx context.Context, msg Message) error {
 	if err != nil {
 		return err
 	}
-	if s.maxPerChat > 0 && msg.MessageID%100 == 0 {
-		return s.prune(ctx, msg.ChatID)
-	}
-	return nil
+	return s.prune(ctx, msg.ChatID)
 }
 
 func (s *Store) prune(ctx context.Context, chatID int64) error {
+	// ponytail: O(n) per save (normally 50k retained rows); use persisted per-chat
+	// counters if message rates outgrow this indexed scan.
 	_, err := s.db.ExecContext(ctx, `
-  DELETE FROM messages WHERE chat_id = ? AND id NOT IN (
-   SELECT id FROM messages WHERE chat_id = ? ORDER BY date DESC, message_id DESC LIMIT ?
-  )`, chatID, chatID, s.maxPerChat)
+  DELETE FROM messages WHERE id IN (
+   SELECT id FROM messages WHERE chat_id = ? ORDER BY date DESC, message_id DESC LIMIT -1 OFFSET ?
+  )`, chatID, s.maxPerChat)
 	return err
 }
 

@@ -2,8 +2,10 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,6 +17,26 @@ func (f testTransport) RoundTrip(r *http.Request) (*http.Response, error) { retu
 type brokenResponse struct{}
 
 func (brokenResponse) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestGetUpdatesIncludesEditedMessages(t *testing.T) {
+	client := New("test-token")
+	client.http.Transport = testTransport(func(r *http.Request) (*http.Response, error) {
+		var request struct {
+			AllowedUpdates []string `json:"allowed_updates"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(request.AllowedUpdates, "edited_message") {
+			t.Fatal("message edits are not subscribed, so moderation and archive updates never receive them")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":[{"update_id":8,"edited_message":{"message_id":3,"text":"edited","chat":{"id":-1}}}]}`))}, nil
+	})
+	updates, err := client.GetUpdates(context.Background(), 8)
+	if err != nil || len(updates) != 1 || updates[0].EditedMessage == nil || updates[0].EditedMessage.Text != "edited" {
+		t.Fatalf("edited message not received: updates=%+v err=%v", updates, err)
+	}
+}
 
 func TestRetriesDoNotDuplicateUnconfirmedSends(t *testing.T) {
 	for _, method := range []string{"sendDocument", "sendMediaGroup", "sendMessage", "getMe"} {

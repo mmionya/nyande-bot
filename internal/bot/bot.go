@@ -236,10 +236,13 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	}
 
 	if update.EditedMessage != nil {
-		if b.silentModeration(update.EditedMessage.Chat.ID) {
-			return b.handleLinks(ctx, update.EditedMessage, extractURLs(update.EditedMessage))
+		if !b.silentModeration(update.EditedMessage.Chat.ID) {
+			b.saveChatMessage(ctx, update.EditedMessage)
 		}
-		b.saveChatMessage(ctx, update.EditedMessage)
+		if b.linkDeletionEnabled(update.EditedMessage.Chat.ID) {
+			return b.handleLinks(ctx, update.EditedMessage, extractURLs(update.EditedMessage), false)
+		}
+		return nil
 	}
 	switch {
 	case update.CallbackQuery != nil:
@@ -262,7 +265,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			if handled, err := b.handleLinkPermissionCommand(ctx, message); handled {
 				return err
 			}
-			return b.handleLinks(ctx, message, extractURLs(message))
+			return b.handleLinks(ctx, message, extractURLs(message), false)
 		}
 		if strings.TrimSpace(message.ContentText()) == silentModerationTrigger {
 			admin, err := b.isAdmin(ctx, message)
@@ -297,7 +300,11 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 	}
 
 	text := strings.TrimSpace(message.ContentText())
-	if command, arguments, ok := parseCommand(text); ok {
+	if strings.HasPrefix(text, "/") {
+		command, arguments, ok := parseCommand(text, b.identity.Username)
+		if !ok {
+			return nil
+		}
 		started := time.Now()
 		log.Printf("[command] started platform=telegram chat=%d user=%d msg=%d command=%q", message.Chat.ID, userID(message), message.MessageID, command)
 		defer func() {
@@ -367,7 +374,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 
 	urls := extractURLs(message)
 	if len(urls) > 0 {
-		if err := b.handleLinks(ctx, message, urls); err != nil {
+		if err := b.handleLinks(ctx, message, urls, true); err != nil {
 			return err
 		}
 		return nil
@@ -381,7 +388,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 	return b.handleLLM(ctx, message)
 }
 
-func parseCommand(text string) (string, string, bool) {
+func parseCommand(text, botUsername string) (string, string, bool) {
 	if !strings.HasPrefix(text, "/") {
 		return "", "", false
 	}
@@ -389,7 +396,11 @@ func parseCommand(text string) (string, string, bool) {
 	if len(fields) == 0 {
 		return "", "", false
 	}
-	command := strings.TrimPrefix(strings.SplitN(fields[0], "@", 2)[0], "/")
+	token, recipient, addressed := strings.Cut(fields[0], "@")
+	if addressed && (botUsername == "" || !strings.EqualFold(recipient, botUsername)) {
+		return "", "", false
+	}
+	command := strings.TrimPrefix(token, "/")
 	arguments := ""
 	if len(fields) > 1 {
 		arguments = strings.Join(fields[1:], " ")
@@ -397,7 +408,7 @@ func parseCommand(text string) (string, string, bool) {
 	return strings.ToLower(command), arguments, true
 }
 
-func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls []string) error {
+func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls []string, download bool) error {
 	if b.silentModeration(message.Chat.ID) {
 		// This Telegram flag identifies posts from the linked discussion channel;
 		// ordinary forwards and comments do not inherit the exemption.
@@ -432,7 +443,7 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 		}
 		return nil
 	}
-	if b.silentModeration(message.Chat.ID) {
+	if !download || b.silentModeration(message.Chat.ID) {
 		return nil
 	}
 	if b.blockedMessage(message) {
@@ -440,6 +451,9 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 	}
 	supported := supportedURLs(urls)
 	if len(supported) == 0 {
+		if b.llm != nil && b.llm.Enabled() {
+			return b.handleLLM(ctx, message)
+		}
 		if message.IsPrivate() {
 			_, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.unsupported_private"), message.MessageID, nil)
 			return err
@@ -574,9 +588,6 @@ func (b *Bot) saveChatMessage(ctx context.Context, message *telegram.Message) {
 		return
 	}
 	text := strings.TrimSpace(message.ContentText())
-	if text == "" {
-		return
-	}
 	var currentUserID int64
 	var username, displayName string
 	if message.From != nil {

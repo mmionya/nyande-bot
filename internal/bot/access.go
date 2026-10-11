@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"strconv"
-	"strings"
 
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	"github.com/mmionya/nyande-bot/resources"
@@ -38,17 +37,13 @@ func (b *Bot) rejectBlockedUpdate(ctx context.Context, update telegram.Update) (
 	// Bans stop bot services, but must not exempt a user from link moderation.
 	if b.linkDeletionEnabled(message.Chat.ID) {
 		if urls := extractURLs(message); len(urls) > 0 {
-			return true, b.handleLinks(ctx, message, urls)
+			return true, b.handleLinks(ctx, message, urls, false)
 		}
 	}
 	return true, nil
 }
 
 func (b *Bot) botBanCommand(ctx context.Context, message *telegram.Message, command, arguments string) error {
-	token := strings.Fields(message.ContentText())[0]
-	if _, username, addressed := strings.Cut(token, "@"); addressed && !strings.EqualFold(username, b.identity.Username) {
-		return nil
-	}
 	if message.ForwardOrigin != nil || message.IsAutomaticForward {
 		return nil
 	}
