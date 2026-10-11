@@ -931,5 +931,6 @@
   "telegram.reply_context.unknown_author": "Unknown",
   "telegram.tomato.gif": "GIF",
   "music.modal.title": "Поиск · {source}",
-  "music.search.title": "Треки по запросу «{query}»"
+  "music.search.title": "Треки по запросу «{query}»",
+  "downloader.log.instagram_stage": "[download] source=instagram method=%s elapsed_ms=%d success=%t"
 }

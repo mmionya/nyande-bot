@@ -183,6 +183,12 @@ func ytdlpMediaOptionsForFormat(value *url.URL, format string) []string {
 	if IsYouTube(value) {
 		options = append(options, "--js-runtimes", "deno", "--recode-video", "mp4")
 	}
+	if IsInstagram(value) {
+		// Bound stalled requests and retries before trying another source.
+		// The socket timeout does not cap the duration of an active download.
+		options = append(options, "--socket-timeout", "15", "--extractor-retries", "1",
+			"--retries", "2", "--fragment-retries", "2")
+	}
 	return append(options, "--format", format)
 }
 

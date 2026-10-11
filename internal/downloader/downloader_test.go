@@ -144,6 +144,38 @@ func TestYouTubeYTDLPOptionsAlwaysProduceMP4(t *testing.T) {
 	}
 }
 
+func TestInstagramYTDLPBoundsNetworkRetriesOnlyForInstagram(t *testing.T) {
+	limits := map[string]string{
+		"--socket-timeout": "15", "--extractor-retries": "1",
+		"--retries": "2", "--fragment-retries": "2",
+	}
+	for _, rawURL := range []string{
+		"https://www.instagram.com/p/ABC123/",
+		"https://www.instagram.com/reel/ABC123/",
+		"https://instagr.am/p/ABC123/",
+		"https://www.youtube.com/watch?v=abcdefghijk",
+		"https://www.reddit.com/r/cats/comments/abc/title/",
+		"https://www.pinterest.com/pin/123/",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			value, err := url.Parse(rawURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			options := ytdlpMediaOptions(value)
+			for option, limit := range limits {
+				if IsInstagram(value) {
+					if !containsAdjacent(options, option, limit) {
+						t.Errorf("expected %s %s, got %v", option, limit, options)
+					}
+				} else if slices.Contains(options, option) {
+					t.Errorf("Instagram retry limits must not affect other sources: %v", options)
+				}
+			}
+		})
+	}
+}
+
 func TestYouTubeYTDLPFormatsFallBackToLowerResolutions(t *testing.T) {
 	value, err := url.Parse("https://www.youtube.com/watch?v=abcdefghijk")
 	if err != nil {

@@ -73,6 +73,37 @@ exit 1
 	}
 }
 
+func TestInstagramExtractorSuccessSkipsFallbackPages(t *testing.T) {
+	for _, kind := range []string{"p", "reel", "reels", "tv"} {
+		t.Run(kind, func(t *testing.T) {
+			script := filepath.Join(t.TempDir(), "yt-dlp")
+			if err := os.WriteFile(script, []byte(`#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = --output ]; then
+        directory=${2%/*}
+        printf mp4 > "$directory/clip.mp4"
+        exit 0
+    fi
+    shift
+done
+exit 1
+`), 0700); err != nil {
+				t.Fatal(err)
+			}
+			d := New(config.Config{YTDownloadPath: script, MaxFileSize: 1024, MaxMediaItems: 10, RetryAttempts: 3})
+			d.client.Transport = mediaRedirectTransport(func(r *http.Request) (*http.Response, error) {
+				t.Errorf("successful extraction must not request fallback %s", r.URL.Host)
+				return nil, errors.New("unexpected fallback")
+			})
+			result, err := d.Download(context.Background(), "https://www.instagram.com/"+kind+"/ABC123/")
+			if err != nil || len(result.Items) != 1 || result.Source != "instagram" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
 func TestInstagramPageMediaExtractsEscapedCarouselImages(t *testing.T) {
 	page := `<meta content="A photo caption &amp; more" property="og:description">
 		<script>
@@ -180,6 +211,51 @@ func TestInstagramMediaHostsIncludeApifyProxy(t *testing.T) {
 	}
 	if instagramMediaHost("instagram.example.com") {
 		t.Fatal("unrelated host must not be trusted")
+	}
+}
+
+func TestInstagramPagesDownloadBeforeTryingFallback(t *testing.T) {
+	value, _ := url.Parse("https://www.instagram.com/reel/ABC123/")
+	if !isPublicURL(value) {
+		t.Skip("public Instagram DNS unavailable; HTTP requests are mocked")
+	}
+	for _, test := range []struct {
+		name, firstCaption, wantCaption string
+		firstStatus                     int
+		wantPaths                       []string
+	}{
+		{"canonical succeeds", "First caption", "First caption", 200, []string{"/reel/ABC123/", "/first.mp4"}},
+		{"media failure falls back", "First caption", "First caption", 403, []string{"/reel/ABC123/", "/first.mp4", "/reel/ABC123/embed/captioned/", "/second.mp4"}},
+		{"fallback supplies caption", "", "Embed caption", 403, []string{"/reel/ABC123/", "/first.mp4", "/reel/ABC123/embed/captioned/", "/second.mp4"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := New(config.Config{MaxFileSize: 1024, MaxMediaItems: 10, YTDownloadPath: filepath.Join(t.TempDir(), "missing-yt-dlp")})
+			var paths []string
+			d.client.Transport = mediaRedirectTransport(func(request *http.Request) (*http.Response, error) {
+				paths = append(paths, request.URL.Path)
+				status, contentType, body := http.StatusOK, "text/html", ""
+				switch request.URL.Path {
+				case "/reel/ABC123/":
+					body = `<meta property="og:description" content="` + test.firstCaption + `"><meta property="og:video" content="https://www.instagram.com/first.mp4">`
+				case "/reel/ABC123/embed/captioned/":
+					body = `<meta property="og:description" content="Embed caption"><meta property="og:video" content="https://www.instagram.com/second.mp4">`
+				case "/first.mp4":
+					status, contentType, body = test.firstStatus, "video/mp4", "mp4"
+				case "/second.mp4":
+					contentType, body = "video/mp4", "mp4"
+				default:
+					t.Fatalf("unexpected request: %s", request.URL)
+				}
+				return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+			})
+			result, err := d.downloadInstagram(context.Background(), value)
+			if err != nil || len(result.Items) != 1 || result.Caption != test.wantCaption || result.Source != "instagram" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if !reflect.DeepEqual(paths, test.wantPaths) {
+				t.Fatalf("request order=%v; want %v", paths, test.wantPaths)
+			}
+		})
 	}
 }
 

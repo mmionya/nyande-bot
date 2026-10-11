@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mmionya/nyande-bot/resources"
 )
@@ -50,46 +52,38 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 	}
 	canonical := "https://www.instagram.com/" + mediaType + "/" + match[2] + "/"
 	embed := canonical + "embed/captioned/"
-	var combined error
 	caption := ""
 	canonicalURL, _ := url.Parse(canonical)
-	if mediaType == "p" {
-		// The extractor retains carousel order and distinguishes photos from video covers.
-		result, err := d.downloadYTDLPWithOptions(ctx, canonicalURL, true)
-		if err == nil {
-			return result, nil
-		}
-		combined = err
+	// The extractor handles both Reels and ordered carousels; avoid fetching the
+	// same Instagram pages ourselves before it gets a chance to succeed.
+	// ponytail: return usable media immediately; missing captions would require
+	// a separate metadata request if caption enrichment becomes necessary.
+	started := time.Now()
+	result, err := d.downloadYTDLPWithOptions(ctx, canonicalURL, true)
+	log.Printf(resources.Get("downloader.log.instagram_stage"), "yt-dlp", time.Since(started).Milliseconds(), err == nil)
+	if err == nil {
+		return result, nil
 	}
-	mediaCandidates := make([][]string, 0, 2)
-	for _, pageURL := range []string{canonical, embed} {
+	combined := err
+	for index, pageURL := range []string{canonical, embed} {
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
+		started = time.Now()
 		page, err := d.fetchInstagramPage(ctx, pageURL)
+		log.Printf(resources.Get("downloader.log.instagram_stage"), []string{"page", "embed"}[index], time.Since(started).Milliseconds(), err == nil)
 		if err != nil {
 			combined = errors.Join(combined, err)
 			continue
 		}
 		urls, pageCaption := instagramPageMedia(page, mediaType == "p")
 		caption = firstNonEmpty(caption, pageCaption)
-		if len(urls) > 0 {
-			mediaCandidates = append(mediaCandidates, urls)
+		if len(urls) == 0 {
+			continue
 		}
-	}
-	for _, urls := range mediaCandidates {
 		items, err := d.downloadInstagramItems(ctx, urls, canonical)
 		if err == nil && len(items) > 0 {
 			return Result{Items: items, Caption: caption, Source: "instagram"}, nil
-		}
-		combined = errors.Join(combined, err)
-	}
-
-	if mediaType != "p" {
-		result, err := d.downloadYTDLPWithOptions(ctx, canonicalURL, true)
-		if err == nil {
-			result.Source = "instagram"
-			if result.Caption == "" {
-				result.Caption = caption
-			}
-			return result, nil
 		}
 		combined = errors.Join(combined, err)
 	}
@@ -98,7 +92,9 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		return Result{}, err
 	}
 	if mediaType == "reel" || mediaType == "tv" {
+		started = time.Now()
 		item, err := d.downloadInstagramVX(ctx, match[2], canonical)
+		log.Printf(resources.Get("downloader.log.instagram_stage"), "vxinstagram", time.Since(started).Milliseconds(), err == nil)
 		if err == nil {
 			return Result{Items: []Media{item}, Caption: caption, Source: "instagram"}, nil
 		}
@@ -108,7 +104,9 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		return Result{}, err
 	}
 	if d.cfg.APIFYToken != "" {
+		started = time.Now()
 		result, err := d.downloadInstagramApify(ctx, canonical)
+		log.Printf(resources.Get("downloader.log.instagram_stage"), "apify", time.Since(started).Milliseconds(), err == nil)
 		if err == nil {
 			if result.Caption == "" {
 				result.Caption = caption
