@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -39,7 +42,29 @@ var (
 )
 
 var defaultClient = &http.Client{
-	Timeout: 15 * time.Second,
+	Timeout:   15 * time.Second,
+	Transport: publicTransport(),
+}
+
+func publicTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	// Control checks the resolved IP immediately before connecting, including
+	// redirects and DNS changes. An environment proxy must not bypass this check.
+	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second, Control: checkPublicAddress}
+	transport.DialContext = dialer.DialContext
+	return transport
+}
+
+var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
+
+func checkPublicAddress(_ string, address string, _ syscall.RawConn) error {
+	endpoint, err := netip.ParseAddrPort(address)
+	ip := endpoint.Addr().Unmap()
+	if err != nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || sharedAddressSpace.Contains(ip) {
+		return errors.New("webpage address must be public")
+	}
+	return nil
 }
 
 func Fetch(ctx context.Context, rawURL string, maxRunes int) (Page, error) {
