@@ -9,6 +9,39 @@ import (
 	"testing"
 )
 
+func TestDotEnvUsesLastValueAndPreservesProcessEnvironment(t *testing.T) {
+	const fileKey = "NYANDE_TEST_FILE_VALUE"
+	const processKey = "NYANDE_TEST_PROCESS_VALUE"
+	t.Setenv(fileKey, "")
+	if err := os.Unsetenv(fileKey); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(processKey, "process")
+	path := filepath.Join(t.TempDir(), ".env")
+	data := fileKey + "=first\nexport " + fileKey + "='last'\n" + processKey + "=file\n"
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadDotEnv(path); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv(fileKey) != "last" || os.Getenv(processKey) != "process" {
+		t.Fatal(".env precedence differs from service EnvironmentFile precedence")
+	}
+}
+
+func TestLoadRejectsUnreadableDotEnv(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("BOT_TOKEN", "test")
+	t.Setenv("LLM_ENABLED", "false")
+	if err := os.Mkdir(".env", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "load .env") {
+		t.Fatalf("must report .env read errors instead of using defaults: %v", err)
+	}
+}
+
 func TestStorageEncryptionKeyConfiguration(t *testing.T) {
 	t.Setenv("BOT_TOKEN", "test")
 	t.Setenv("LLM_ENABLED", "false")

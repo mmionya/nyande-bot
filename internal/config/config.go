@@ -76,7 +76,9 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	_ = loadDotEnv(".env")
+	if err := loadDotEnv(".env"); err != nil {
+		return Config{}, fmt.Errorf("load .env: %w", err)
+	}
 	cfg := Config{
 		BotToken:               firstEnv("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
 		BotOwnerIDs:            envList("BOT_OWNER_IDS", nil),
@@ -168,6 +170,7 @@ func loadDotEnv(path string) error {
 		return err
 	}
 	defer file.Close()
+	values := make(map[string]string)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -184,12 +187,20 @@ func loadDotEnv(path string) error {
 			value = value[1 : len(value)-1]
 		}
 		if key != "" {
-			if _, exists := os.LookupEnv(key); !exists {
-				_ = os.Setenv(key, value)
+			values[key] = value
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	for key, value := range values {
+		if _, exists := os.LookupEnv(key); !exists {
+			if err := os.Setenv(key, value); err != nil {
+				return err
 			}
 		}
 	}
-	return scanner.Err()
+	return nil
 }
 
 func firstEnv(names ...string) string {
