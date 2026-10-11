@@ -20,6 +20,7 @@ import (
 	"github.com/disgoorg/godave"
 	"github.com/disgoorg/snowflake/v2"
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/resources"
 	davesession "github.com/thomas-vilte/dave-go/session"
 )
 
@@ -180,7 +181,7 @@ func (d *directMusicBackend) load(ctx context.Context, query string) ([]lavalink
 	return d.extractor.load(ctx, query)
 }
 
-var errMusicPlayerLimit = errors.New("music player limit reached")
+var errMusicPlayerLimit = errors.New(resources.Get("music.error.player_limit"))
 
 func (d *directMusicBackend) join(id, channel string) error {
 	if channel == "" {
@@ -194,7 +195,7 @@ func (d *directMusicBackend) join(id, channel string) error {
 	if p := d.players[id]; p != nil {
 		d.mu.Unlock()
 		if p.channel != channel || p.closed.Load() {
-			return errors.New("voice player already exists")
+			return errors.New(resources.Get("music.error.player_exists"))
 		}
 		return nil
 	}
@@ -279,25 +280,25 @@ func (d *directMusicBackend) update(ctx context.Context, id string, opts ...disg
 	}
 	p := d.player(id)
 	if p == nil {
-		return errors.New("voice is not connected")
+		return errors.New(resources.Get("music.error.voice_disconnected"))
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed.Load() {
-		return errors.New("voice player is closed")
+		return errors.New(resources.Get("music.error.player_closed"))
 	}
 	volume := p.volume
 	if update.Volume != nil {
 		volume = *update.Volume
 	}
 	if volume < 0 || volume > 100 {
-		return errors.New("invalid volume")
+		return errors.New(resources.Get("music.error.invalid_volume"))
 	}
 	old := p.active.Load()
 	if update.Track != nil {
 		encoded := update.Track.Encoded.Value
 		if encoded == nil {
-			return errors.New("missing direct track metadata")
+			return errors.New(resources.Get("music.error.missing_track_metadata"))
 		}
 		track := lavalink.Track{Encoded: *encoded}
 		if err := json.Unmarshal([]byte(*encoded), &track.Info); err != nil {
@@ -315,7 +316,7 @@ func (d *directMusicBackend) update(ctx context.Context, id string, opts ...disg
 		return d.replaceRun(p, id, track, stream, 0, volume, false)
 	}
 	if old == nil {
-		return errors.New("nothing is playing")
+		return errors.New(resources.Get("music.error.nothing_playing"))
 	}
 	paused := old.paused.Load()
 	if update.Paused != nil {
@@ -363,7 +364,7 @@ func (d *directMusicBackend) send(ctx context.Context, p *directMusicPlayer, id 
 			return
 		}
 		if err != nil {
-			log.Printf("[music] direct playback failed guild=%s: %v", id, err)
+			log.Printf(resources.Get("music.log.direct_playback_failed"), id, err)
 		}
 		go d.service.trackEnded(id, r.track, err != nil)
 	}
@@ -402,7 +403,7 @@ func (d *directMusicBackend) send(ctx context.Context, p *directMusicPlayer, id 
 					heldSince = time.Now()
 				}
 				if time.Since(heldSince) > 30*time.Second {
-					finish(errors.New("DAVE handshake timed out"))
+					finish(errors.New(resources.Get("music.error.dave_handshake_timeout")))
 					return
 				}
 				emptySince = time.Now()
@@ -421,14 +422,14 @@ func (d *directMusicBackend) send(ctx context.Context, p *directMusicPlayer, id 
 					return
 				}
 				if err := p.conn.write(frame); err != nil {
-					finish(fmt.Errorf("voice send: %w", err))
+					finish(fmt.Errorf(resources.Get("music.error.voice_send"), err))
 					return
 				}
 				r.position.Add(20)
 				emptySince = time.Now()
 			default:
 				if time.Since(emptySince) > 30*time.Second {
-					finish(errors.New("audio stream stalled"))
+					finish(errors.New(resources.Get("music.error.audio_stalled")))
 					return
 				}
 			}

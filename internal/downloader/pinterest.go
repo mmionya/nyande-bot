@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const maxPinterestResponseSize = 10 * 1024 * 1024
@@ -50,7 +52,7 @@ func (d *Downloader) downloadPinterest(ctx context.Context, value *url.URL) (Res
 	}
 	pinID := pinterestPinID(resolved)
 	if pinID == "" {
-		return Result{}, errors.New("Pinterest URL does not contain a pin ID")
+		return Result{}, errors.New(resources.Get("downloader.error.pinterest_url_does_not_contain_a_pin_id"))
 	}
 	pin, err := d.fetchPinterestPin(ctx, pinID, resolved.String())
 	if err != nil {
@@ -76,7 +78,7 @@ func (d *Downloader) downloadPinterest(ctx context.Context, value *url.URL) (Res
 	}
 	if len(items) == 0 {
 		if combined == nil {
-			combined = errors.New("Pinterest returned no downloadable media")
+			combined = errors.New(resources.Get("downloader.error.pinterest_returned_no_downloadable_media"))
 		}
 		return d.downloadPinterestFallback(ctx, resolved, combined)
 	}
@@ -89,7 +91,7 @@ func (d *Downloader) downloadPinterestFallback(ctx context.Context, value *url.U
 		result.Source = "pinterest"
 		return result, nil
 	}
-	return Result{}, fmt.Errorf("Pinterest download failed: %w", errors.Join(nativeErr, err))
+	return Result{}, fmt.Errorf(resources.Get("downloader.error.pinterest_download_failed"), errors.Join(nativeErr, err))
 }
 
 func (d *Downloader) resolvePinterestURL(ctx context.Context, value *url.URL) (*url.URL, error) {
@@ -109,10 +111,10 @@ func (d *Downloader) resolvePinterestURL(ctx context.Context, value *url.URL) (*
 	defer response.Body.Close()
 	resolved := response.Request.URL
 	if !IsPinterest(resolved) || hostMatches(resolved.Hostname(), "pin.it") {
-		return value, errors.New("Pinterest short link redirected outside Pinterest")
+		return value, errors.New(resources.Get("downloader.error.pinterest_short_link_redirected_outside_pinterest"))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return resolved, fmt.Errorf("Pinterest short link HTTP %d", response.StatusCode)
+		return resolved, fmt.Errorf(resources.Get("downloader.error.pinterest_short_link_http"), response.StatusCode)
 	}
 	return resolved, nil
 }
@@ -151,17 +153,17 @@ func (d *Downloader) fetchPinterestPin(ctx context.Context, pinID, referer strin
 	}
 	defer response.Body.Close()
 	if !hostMatches(response.Request.URL.Hostname(), "pinterest.com") {
-		return nil, errors.New("Pinterest API redirected outside Pinterest")
+		return nil, errors.New(resources.Get("downloader.error.pinterest_api_redirected_outside_pinterest"))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("Pinterest API HTTP %d", response.StatusCode)
+		return nil, fmt.Errorf(resources.Get("downloader.error.pinterest_api_http"), response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxPinterestResponseSize+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > maxPinterestResponseSize {
-		return nil, errors.New("Pinterest API response is too large")
+		return nil, errors.New(resources.Get("downloader.error.pinterest_api_response_is_too_large"))
 	}
 	return pinterestPinFromResponse(data)
 }
@@ -169,12 +171,12 @@ func (d *Downloader) fetchPinterestPin(ctx context.Context, pinID, referer strin
 func pinterestPinFromResponse(data []byte) (map[string]any, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("Pinterest API returned invalid JSON: %w", err)
+		return nil, fmt.Errorf(resources.Get("downloader.error.pinterest_api_returned_invalid_json"), err)
 	}
 	resource, _ := payload["resource_response"].(map[string]any)
 	pin, _ := resource["data"].(map[string]any)
 	if len(pin) == 0 {
-		return nil, errors.New("Pinterest API returned no public pin data")
+		return nil, errors.New(resources.Get("downloader.error.pinterest_api_returned_no_public_pin_data"))
 	}
 	return pin, nil
 }

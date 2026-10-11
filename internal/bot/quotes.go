@@ -17,6 +17,7 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/quotes"
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 	"golang.org/x/image/draw"
 )
 
@@ -28,9 +29,9 @@ var quoteFontData []byte
 
 var quoteFont = mustOpenTypeFont(quoteFontData)
 
-const quoteCaptionFormat = "Цитата #%d · /quote random"
+var quoteCaptionFormat = resources.Get("telegram.quote.caption")
 
-const quoteHelp = "Цитатник этого чата:\n/quote — ответом на сообщение: сохранить и сделать карточку\n/quote random — случайная цитата\n/quote list — последние 10 цитат\n/quote 12 — цитата по номеру\n/quote delete 12 — удалить (автор, сохранивший или администратор)\n/quote trigger — показать слово-триггер\n/quote trigger цитата — задать слово для цитирования ответом\n/quote trigger off — отключить триггер\n\nВ группах триггер настраивают администраторы. Можно цитировать текст и подписи к медиа, до 1200 символов.\n\nЭмодзи: Twemoji — Twitter, Inc. и соавторы.\nИсточник: https://github.com/jdecked/twemoji\nЛицензия CC BY 4.0: https://creativecommons.org/licenses/by/4.0/"
+var quoteHelp = resources.Get("telegram.quote.help")
 
 func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, arguments string) error {
 	say := func(text string) error {
@@ -38,7 +39,7 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 		return err
 	}
 	if b.quotes == nil {
-		return say("Цитатник недоступен.")
+		return say(resources.Get("telegram.quote.unavailable"))
 	}
 	args := strings.Fields(arguments)
 	var q quotes.Quote
@@ -54,44 +55,44 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 				return err
 			}
 			if trigger == "" {
-				return say("Триггер цитат отключён. Задать: /quote trigger цитата")
+				return say(resources.Get("telegram.quote.trigger_unset"))
 			}
-			return say(fmt.Sprintf("Триггер цитат: %s. Ответь этим словом на сообщение; регистр не важен.", trigger))
+			return say(fmt.Sprintf(resources.Get("telegram.quote.trigger_status"), trigger))
 		}
 		admin, err := b.isAdmin(ctx, message)
 		if err != nil {
 			return err
 		}
 		if !admin {
-			return say("Настраивать триггер цитат могут только администраторы чата.")
+			return say(resources.Get("telegram.quote.trigger_admin"))
 		}
 		trigger := args[1]
 		if strings.EqualFold(trigger, silentModerationTrigger) {
-			return say("Это слово занято другой командой бота. Выбери другой триггер.")
+			return say(resources.Get("telegram.quote.trigger_reserved"))
 		}
 		if strings.EqualFold(trigger, "off") {
 			trigger = ""
 		}
 		if err := b.quotes.SetTrigger(ctx, message.Chat.ID, trigger); err != nil {
 			if errors.Is(err, quotes.ErrInvalidTrigger) {
-				return say("Триггер — одно слово до 32 символов: буквы, цифры, точка, дефис или подчёркивание. Например: .й")
+				return say(resources.Get("telegram.quote.trigger_invalid"))
 			}
 			return err
 		}
 		if trigger == "" {
-			return say("Триггер цитат отключён. Команда /quote продолжает работать.")
+			return say(resources.Get("telegram.quote.trigger_disabled"))
 		}
-		return say(fmt.Sprintf("Триггер сохранён: %s. Ответь только этим словом на сообщение, и я сделаю цитату. Регистр не важен.", trigger))
+		return say(fmt.Sprintf(resources.Get("telegram.quote.trigger_saved"), trigger))
 	case len(args) == 0 && message.ReplyToMessage != nil:
 		target := message.ReplyToMessage
 		if strings.TrimSpace(target.ContentText()) == "" {
-			return say("Ответь /quote на сообщение с текстом или подписью к медиа.")
+			return say(resources.Get("telegram.quote.text_required"))
 		}
 		if utf8.RuneCountInString(strings.TrimSpace(target.ContentText())) > quotes.MaxTextRunes {
-			return say("Для карточки нужно не больше 1200 символов. Выбери сообщение покороче.")
+			return say(resources.Get("telegram.quote.too_long"))
 		}
 		if message.From == nil || message.SenderChat != nil {
-			return say("Сохрани цитату от своего имени, а не от имени канала.")
+			return say(resources.Get("telegram.quote.save_as_user"))
 		}
 		q = quoteFromMessage(message.Chat.ID, message.From.ID, target)
 		q, err = b.quotes.Add(ctx, q)
@@ -103,7 +104,7 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 			return listErr
 		}
 		if len(items) == 0 {
-			return say("Здесь пока нет цитат. Сохрани первую командой /quote в ответ на сообщение.")
+			return say(resources.Get("telegram.quote.empty"))
 		}
 		var lines []string
 		for _, item := range items {
@@ -117,18 +118,18 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 			}
 			lines = append(lines, fmt.Sprintf("#%d · %s\n%s", item.ID, string(author), string(text)))
 		}
-		return say("Последние цитаты:\n\n" + strings.Join(lines, "\n\n") + "\n\nОткрыть: /quote номер")
+		return say(resources.Format("telegram.quote.list", map[string]any{"quotes": strings.Join(lines, "\n\n")}))
 	case len(args) == 2 && strings.EqualFold(args[0], "delete"):
 		id, parseErr := strconv.ParseInt(args[1], 10, 64)
 		if parseErr != nil || id < 1 {
 			return say(quoteHelp)
 		}
 		if message.From == nil || message.SenderChat != nil {
-			return say("Удалить цитату можно от своего имени.")
+			return say(resources.Get("telegram.quote.delete_as_user"))
 		}
 		q, err = b.quotes.Get(ctx, message.Chat.ID, id)
 		if errors.Is(err, sql.ErrNoRows) {
-			return say("Такой цитаты в этом чате нет.")
+			return say(resources.Get("telegram.quote.not_in_chat"))
 		}
 		if err != nil {
 			return err
@@ -145,9 +146,9 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 			return deleteErr
 		}
 		if !deleted {
-			return say("Удалить цитату может её автор, сохранивший её участник или администратор.")
+			return say(resources.Get("telegram.quote.delete_forbidden"))
 		}
-		return say(fmt.Sprintf("Цитата #%d удалена.", id))
+		return say(fmt.Sprintf(resources.Get("telegram.quote.deleted"), id))
 	case len(args) == 1:
 		id, parseErr := strconv.ParseInt(args[0], 10, 64)
 		if parseErr != nil || id < 1 {
@@ -158,7 +159,7 @@ func (b *Bot) quoteCommand(ctx context.Context, message *telegram.Message, argum
 		return say(quoteHelp)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		return say("Цитата не найдена. Сохрани сообщение командой /quote или посмотри /quote list.")
+		return say(resources.Get("telegram.quote.not_found"))
 	}
 	if err != nil {
 		return err
@@ -205,7 +206,7 @@ func (b *Bot) handleQuoteTrigger(ctx context.Context, message *telegram.Message)
 }
 
 func quoteFromMessage(chatID, savedBy int64, m *telegram.Message) quotes.Quote {
-	q := quotes.Quote{ChatID: chatID, SavedBy: savedBy, MessageID: m.MessageID, Date: m.Date, Text: m.ContentText(), Author: "Неизвестный автор"}
+	q := quotes.Quote{ChatID: chatID, SavedBy: savedBy, MessageID: m.MessageID, Date: m.Date, Text: m.ContentText(), Author: resources.Get("telegram.quote.unknown_author")}
 	if m.From != nil {
 		q.AuthorID, q.Author = m.From.ID, m.From.DisplayName()
 	}
@@ -213,7 +214,7 @@ func quoteFromMessage(chatID, savedBy int64, m *telegram.Message) quotes.Quote {
 		q.AuthorID, q.Author = 0, m.SenderChat.Title
 	}
 	if origin := m.ForwardOrigin; origin != nil {
-		q.AuthorID, q.Author, q.Date = 0, "Неизвестный автор", origin.Date
+		q.AuthorID, q.Author, q.Date = 0, resources.Get("telegram.quote.unknown_author"), origin.Date
 		switch {
 		case origin.SenderUser != nil:
 			q.AuthorID, q.Author = origin.SenderUser.ID, origin.SenderUser.DisplayName()

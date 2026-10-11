@@ -8,6 +8,7 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/llm"
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
@@ -17,15 +18,14 @@ func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
 	chatID := message.Chat.ID
 	return []llm.Tool{
 		{
-			Name: "search_chat_messages",
-			Description: "Search historical messages sent by users in this chat by keyword or phrase. " +
-				"Use when the user asks about past topics, who said what, earlier discussions, or requests to find a previous message.",
+			Name:        "search_chat_messages",
+			Description: resources.Get("tool.chat_search.description"),
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"query": map[string]any{
 						"type":        "string",
-						"description": "Keywords or phrase to search for in the chat history",
+						"description": resources.Get("tool.chat_search.query_description"),
 					},
 				},
 				"required":             []string{"query"},
@@ -34,17 +34,17 @@ func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
 			Execute: func(ctx context.Context, arguments map[string]string) (string, error) {
 				query := strings.TrimSpace(arguments["query"])
 				if query == "" {
-					return "Please provide a non-empty search query.", nil
+					return resources.Get("tool.chat_search.empty_query"), nil
 				}
 				messages, err := b.chatlog.Search(ctx, chatID, query, 15)
 				if err != nil {
-					return fmt.Sprintf("Error searching chat messages: %v", err), nil
+					return fmt.Sprintf(resources.Get("tool.chat_search.failed"), err), nil
 				}
 				if len(messages) == 0 {
-					return fmt.Sprintf("No messages found matching %q in this chat.", query), nil
+					return fmt.Sprintf(resources.Get("tool.chat_search.no_results"), query), nil
 				}
 				var bld strings.Builder
-				fmt.Fprintf(&bld, "Found %d messages in chat history:\n", len(messages))
+				fmt.Fprintf(&bld, resources.Get("tool.chat_search.results"), len(messages))
 				for _, m := range messages {
 					author := m.DisplayName
 					if m.Username != "" {
@@ -57,15 +57,14 @@ func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
 			},
 		},
 		{
-			Name: "get_recent_messages",
-			Description: "Get the most recent messages sent in this chat in chronological order (oldest to newest). " +
-				"Use when the user asks what people were just discussing, asks for a summary of recent chat activity, or references recent conversation context.",
+			Name:        "get_recent_messages",
+			Description: resources.Get("tool.chat_recent.description"),
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"limit": map[string]any{
 						"type":        "integer",
-						"description": "Number of recent messages to retrieve (1-30, default 15)",
+						"description": resources.Get("tool.chat_recent.limit_description"),
 						"minimum":     1,
 						"maximum":     30,
 					},
@@ -87,13 +86,13 @@ func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
 				}
 				messages, err := b.chatlog.Recent(ctx, chatID, limit)
 				if err != nil {
-					return fmt.Sprintf("Error retrieving recent messages: %v", err), nil
+					return fmt.Sprintf(resources.Get("tool.chat_recent.failed"), err), nil
 				}
 				if len(messages) == 0 {
-					return "No recent messages found in this chat.", nil
+					return resources.Get("tool.chat_recent.empty"), nil
 				}
 				var bld strings.Builder
-				fmt.Fprintf(&bld, "Recent %d messages in this chat (chronological order):\n", len(messages))
+				fmt.Fprintf(&bld, resources.Get("tool.chat_recent.results"), len(messages))
 				for _, m := range messages {
 					author := m.DisplayName
 					if m.Username != "" {

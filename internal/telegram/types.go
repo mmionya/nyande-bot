@@ -1,5 +1,7 @@
 package telegram
 
+import "github.com/mmionya/nyande-bot/resources"
+
 type Update struct {
 	UpdateID         int64             `json:"update_id"`
 	Message          *Message          `json:"message,omitempty"`
@@ -27,7 +29,7 @@ func (u User) DisplayName() string {
 	if u.Username != "" {
 		return "@" + u.Username
 	}
-	return "Игрок"
+	return resources.Get("leaderboard.default_player")
 }
 
 type Chat struct {

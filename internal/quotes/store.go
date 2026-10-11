@@ -11,11 +11,13 @@ import (
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const MaxTextRunes = 1200
 
-var ErrInvalidTrigger = errors.New("quote trigger must be one word of at most 32 letters, numbers, dots, underscores or hyphens")
+var ErrInvalidTrigger = errors.New(resources.Get("quotes.error.trigger_must_be_one_word_of_at_most"))
 
 type Quote struct {
 	ID, ChatID, AuthorID, SavedBy, Date int64
@@ -27,7 +29,7 @@ type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("quote database path is empty")
+		return nil, errors.New(resources.Get("quotes.error.database_path_is_empty"))
 	}
 	if path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -95,7 +97,7 @@ func scan(row interface{ Scan(...any) error }) (Quote, error) {
 func (s *Store) Add(ctx context.Context, q Quote) (Quote, error) {
 	q.Text = strings.TrimSpace(q.Text)
 	if q.Text == "" || utf8.RuneCountInString(q.Text) > MaxTextRunes {
-		return Quote{}, errors.New("quote must contain 1–1200 characters")
+		return Quote{}, errors.New(resources.Get("quotes.error.must_contain_1_1200_characters"))
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO quotes (chat_id, message_id, author_id, saved_by, author, text, date)
 		VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(chat_id, message_id) DO NOTHING`,

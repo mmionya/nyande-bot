@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type Media struct {
@@ -47,10 +48,10 @@ func New(cfg config.Config) *Downloader {
 			Timeout: 45 * time.Second,
 			CheckRedirect: func(request *http.Request, via []*http.Request) error {
 				if len(via) >= 6 {
-					return errors.New("too many redirects")
+					return errors.New(resources.Get("telegram.error.too_many_redirects"))
 				}
 				if request.URL.Scheme != "https" && request.URL.Scheme != "http" {
-					return errors.New("redirected to unsupported URL scheme")
+					return errors.New(resources.Get("downloader.error.redirected_to_unsupported_url_scheme"))
 				}
 				return nil
 			},
@@ -82,7 +83,7 @@ func (d *Downloader) Download(ctx context.Context, rawURL string) (Result, error
 	case isDirectMedia(parsed):
 		operation = d.downloadDirect
 	default:
-		return Result{}, errors.New("unsupported media URL")
+		return Result{}, errors.New(resources.Get("downloader.error.unsupported_media_url"))
 	}
 
 	var result Result
@@ -165,7 +166,7 @@ func normalizedURL(raw string) (*url.URL, error) {
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Hostname() == "" {
-		return nil, errors.New("invalid HTTP URL")
+		return nil, errors.New(resources.Get("downloader.error.invalid_http_url"))
 	}
 	return parsed, nil
 }
@@ -201,7 +202,7 @@ func isKnownMediaHost(host string) bool {
 
 func (d *Downloader) downloadDirect(ctx context.Context, value *url.URL) (Result, error) {
 	if !isPublicURL(value) {
-		return Result{}, errors.New("direct media URL resolves to a private address")
+		return Result{}, errors.New(resources.Get("downloader.error.direct_media_url_resolves_to_a_private_address"))
 	}
 	item, err := d.fetchMedia(ctx, value.String(), "")
 	if err != nil {
@@ -217,7 +218,7 @@ func (d *Downloader) fetchMedia(ctx context.Context, rawURL, expectedKind string
 func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expectedKind, referer string) (Media, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || !isPublicURL(parsed) {
-		return Media{}, errors.New("media URL does not resolve to a public address")
+		return Media{}, errors.New(resources.Get("downloader.error.media_url_does_not_resolve_to_a_public_address"))
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -232,13 +233,13 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	client := *d.client
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		if !isPublicURL(next.URL) {
-			return errors.New("media redirected to a non-public address")
+			return errors.New(resources.Get("downloader.error.media_redirected_to_a_non_public_address"))
 		}
 		if d.client.CheckRedirect != nil {
 			return d.client.CheckRedirect(next, via)
 		}
 		if len(via) >= 6 {
-			return errors.New("too many redirects")
+			return errors.New(resources.Get("telegram.error.too_many_redirects"))
 		}
 		return nil
 	}
@@ -248,10 +249,10 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	}
 	defer response.Body.Close()
 	if !isPublicURL(response.Request.URL) {
-		return Media{}, errors.New("media redirected to a non-public address")
+		return Media{}, errors.New(resources.Get("downloader.error.media_redirected_to_a_non_public_address"))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return Media{}, fmt.Errorf("media HTTP %d", response.StatusCode)
+		return Media{}, fmt.Errorf(resources.Get("downloader.error.media_http"), response.StatusCode)
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0]))
 	kind := kindFromContentType(contentType)
@@ -259,20 +260,20 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 		kind = kindFromExtension(response.Request.URL.Path)
 	}
 	if kind == "" {
-		return Media{}, fmt.Errorf("unsupported media content type %q", contentType)
+		return Media{}, fmt.Errorf(resources.Get("downloader.error.unsupported_media_content_type"), contentType)
 	}
 	if expectedKind != "" && expectedKind != kind {
-		return Media{}, fmt.Errorf("expected %s, received %s", expectedKind, kind)
+		return Media{}, fmt.Errorf(resources.Get("downloader.error.expected_received"), expectedKind, kind)
 	}
 	if response.ContentLength > d.cfg.MaxFileSize {
-		return Media{}, fmt.Errorf("media is too large: %d bytes", response.ContentLength)
+		return Media{}, fmt.Errorf(resources.Get("downloader.error.media_is_too_large_bytes"), response.ContentLength)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, d.cfg.MaxFileSize+1))
 	if err != nil {
 		return Media{}, err
 	}
 	if int64(len(data)) > d.cfg.MaxFileSize {
-		return Media{}, fmt.Errorf("media exceeds %d bytes", d.cfg.MaxFileSize)
+		return Media{}, fmt.Errorf(resources.Get("downloader.error.media_exceeds_bytes"), d.cfg.MaxFileSize)
 	}
 	name := filenameFromURL(response.Request.URL, contentType)
 	return Media{Kind: kind, Name: name, MIME: contentType, Data: data}, nil

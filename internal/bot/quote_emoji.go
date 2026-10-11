@@ -16,6 +16,8 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 // Twemoji graphics, CC-BY-4.0; license and attribution are inside the archive.
@@ -45,7 +47,7 @@ func loadQuoteEmoji() *quoteEmojiNode {
 		for _, code := range strings.Split(strings.TrimSuffix(path.Base(file.Name), ".png"), "-") {
 			value, err := strconv.ParseInt(code, 16, 32)
 			if err != nil || !utf8.ValidRune(rune(value)) {
-				panic("invalid bundled emoji name: " + file.Name)
+				panic(resources.Format("telegram.error.emoji_invalid_name", map[string]any{"filename": file.Name}))
 			}
 			if value == 0xfe0f {
 				continue
@@ -59,7 +61,7 @@ func loadQuoteEmoji() *quoteEmojiNode {
 			node = node.next[rune(value)]
 		}
 		if node.file != nil {
-			panic("duplicate bundled emoji: " + file.Name)
+			panic(resources.Format("telegram.error.emoji_duplicate", map[string]any{"filename": file.Name}))
 		}
 		node.file = file
 	}
@@ -194,7 +196,7 @@ func (f *quoteTextFace) drawEmoji(canvas *image.RGBA, x, baseline int, text stri
 				source, err := png.Decode(reader)
 				reader.Close()
 				if err != nil {
-					return fmt.Errorf("decode quote emoji %s: %w", file.Name, err)
+					return fmt.Errorf(resources.Get("telegram.error.emoji_decode"), file.Name, err)
 				}
 				// Cache only the small images used by this face during this render.
 				scaled := image.NewRGBA(image.Rect(0, 0, f.size, f.size))

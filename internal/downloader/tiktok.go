@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type tikWMResponse struct {
@@ -47,14 +49,14 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return Result{}, fmt.Errorf("TikWM HTTP %d", response.StatusCode)
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.tikwm_http"), response.StatusCode)
 	}
 	var payload tikWMResponse
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return Result{}, fmt.Errorf("TikWM invalid response: %w", err)
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.tikwm_invalid_response"), err)
 	}
 	if payload.Code != 0 {
-		return Result{}, fmt.Errorf("TikWM could not process post: %s", payload.Msg)
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.tikwm_could_not_process_post"), payload.Msg)
 	}
 
 	mediaURLs := payload.Data.Images
@@ -67,7 +69,7 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 		}
 	}
 	if len(mediaURLs) == 0 {
-		return Result{}, errors.New("TikWM returned no downloadable media")
+		return Result{}, errors.New(resources.Get("tiktok.error.no_media"))
 	}
 	items := make([]Media, 0, len(mediaURLs))
 	for _, raw := range mediaURLs {
@@ -85,7 +87,7 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 		items = append(items, item)
 	}
 	if len(items) == 0 {
-		return Result{}, errors.New("TikWM returned no valid media URLs")
+		return Result{}, errors.New(resources.Get("downloader.error.tikwm_returned_no_valid_media_urls"))
 	}
 	caption := cleanText(payload.Data.Title)
 	if payload.Data.Author.Nickname != "" {

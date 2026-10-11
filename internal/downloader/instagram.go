@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 //go:embed instagram_photos.py
@@ -40,7 +42,7 @@ type instagramApifyInput struct {
 func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Result, error) {
 	match := instagramShortcode.FindStringSubmatch(value.Path)
 	if len(match) != 3 {
-		return Result{}, errors.New("Instagram URL does not contain a post or Reel shortcode")
+		return Result{}, errors.New(resources.Get("instagram.error.no_post_shortcode"))
 	}
 	mediaType := strings.ToLower(match[1])
 	if mediaType == "reels" {
@@ -100,7 +102,7 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		if err == nil {
 			return Result{Items: []Media{item}, Caption: caption, Source: "instagram"}, nil
 		}
-		combined = errors.Join(combined, fmt.Errorf("vxinstagram download failed: %w", err))
+		combined = errors.Join(combined, fmt.Errorf(resources.Get("downloader.error.vxinstagram_download_failed"), err))
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -115,7 +117,7 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		}
 		combined = errors.Join(combined, err)
 	}
-	return Result{}, fmt.Errorf("instagram download failed: %w", combined)
+	return Result{}, fmt.Errorf(resources.Get("downloader.error.instagram_download_failed"), combined)
 }
 
 func (d *Downloader) downloadInstagramVX(ctx context.Context, shortcode, referer string) (Media, error) {
@@ -123,10 +125,10 @@ func (d *Downloader) downloadInstagramVX(ctx context.Context, shortcode, referer
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		if next.URL.Scheme != "https" || !hostMatches(next.URL.Hostname(),
 			"vxinstagram.com", "cdninstagram.com", "fbcdn.net", "snapcdn.app", "rapidcdn.app") {
-			return errors.New("vxinstagram redirected to an unsupported media host")
+			return errors.New(resources.Get("downloader.error.vxinstagram_redirected_to_an_unsupported_media_host"))
 		}
 		if len(via) >= 6 {
-			return errors.New("too many vxinstagram redirects")
+			return errors.New(resources.Get("downloader.error.too_many_vxinstagram_redirects"))
 		}
 		if d.client.CheckRedirect != nil {
 			return d.client.CheckRedirect(next, via)
@@ -152,10 +154,10 @@ func (d *Downloader) fetchInstagramPage(ctx context.Context, pageURL string) (st
 	}
 	defer response.Body.Close()
 	if !IsInstagram(response.Request.URL) {
-		return "", errors.New("Instagram redirected to an unsupported host")
+		return "", errors.New(resources.Get("instagram.error.redirect_host"))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", fmt.Errorf("Instagram page HTTP %d", response.StatusCode)
+		return "", fmt.Errorf(resources.Get("downloader.error.instagram_page_http"), response.StatusCode)
 	}
 	page, err := io.ReadAll(io.LimitReader(response.Body, 5*1024*1024))
 	if err != nil {
@@ -251,7 +253,7 @@ func cleanInstagramDescription(value string) string {
 
 func (d *Downloader) downloadInstagramApify(ctx context.Context, postURL string) (Result, error) {
 	if d.cfg.APIFYToken == "" {
-		return Result{}, errors.New("Instagram hid this post; APIFY_TOKEN is required for the fallback")
+		return Result{}, errors.New(resources.Get("downloader.error.instagram_hid_this_post_apify_token_is_required_for_the_fallback"))
 	}
 	actor := strings.ReplaceAll(d.cfg.APIFYInstagramActor, "/", "~")
 	endpoint := fmt.Sprintf(
@@ -273,7 +275,7 @@ func (d *Downloader) downloadInstagramApify(ctx context.Context, postURL string)
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 2048))
-		return Result{}, fmt.Errorf("Apify HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.apify_http"), response.StatusCode, strings.TrimSpace(string(body)))
 	}
 	responseData, err := io.ReadAll(io.LimitReader(response.Body, 10*1024*1024))
 	if err != nil {
@@ -288,11 +290,11 @@ func (d *Downloader) downloadInstagramApify(ctx context.Context, postURL string)
 		items = []map[string]any{item}
 	}
 	if len(items) == 0 {
-		return Result{}, errors.New("Apify returned no Instagram results")
+		return Result{}, errors.New(resources.Get("downloader.error.apify_returned_no_instagram_results"))
 	}
 	mediaURLs := collectApifyMedia(items[0])
 	if len(mediaURLs) == 0 {
-		return Result{}, errors.New("Apify returned no Instagram media URLs")
+		return Result{}, errors.New(resources.Get("downloader.error.apify_returned_no_instagram_media_urls"))
 	}
 	downloaded, err := d.downloadInstagramItems(ctx, mediaURLs, postURL)
 	if err != nil {
@@ -399,7 +401,7 @@ func (d *Downloader) downloadInstagramItems(ctx context.Context, rawURLs []strin
 		if combined != nil {
 			return nil, combined
 		}
-		return nil, errors.New("Instagram media could not be downloaded")
+		return nil, errors.New(resources.Get("downloader.error.instagram_media_could_not_be_downloaded"))
 	}
 	return items, nil
 }

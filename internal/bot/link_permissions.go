@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 // Permission commands are the only commands executed by silent moderation.
@@ -23,7 +24,7 @@ func (b *Bot) handleLinkPermissionCommand(ctx context.Context, message *telegram
 	}
 	admin, err := b.isAdmin(ctx, message)
 	if err != nil {
-		return true, fmt.Errorf("check link permission administrator: %w", err)
+		return true, fmt.Errorf(resources.Get("telegram.error.check_link_admin"), err)
 	}
 	// Non-admin commands still undergo link deletion; a command prefix must not
 	// allow someone to sneak a link past moderation.
@@ -35,34 +36,34 @@ func (b *Bot) handleLinkPermissionCommand(ctx context.Context, message *telegram
 		return true, err
 	}
 	if target == b.identity.ID {
-		return true, errors.New("cannot grant link permission to this bot")
+		return true, errors.New(resources.Get("telegram.error.link_permission_bot"))
 	}
 	permitted := command == "permitlinks"
 	if err := b.linkConfig.SetUserPermission(message.Chat.ID, target, permitted); err != nil {
-		return true, fmt.Errorf("save link permission: %w", err)
+		return true, fmt.Errorf(resources.Get("telegram.error.save_link_permission"), err)
 	}
 	senderChat := int64(0)
 	if message.SenderChat != nil {
 		senderChat = message.SenderChat.ID
 	}
-	log.Printf("[moderation] link_permission platform=telegram chat=%d admin=%d sender_chat=%d target=%d allowed=%t msg=%d", message.Chat.ID, userID(message), senderChat, target, permitted, message.MessageID)
+	log.Printf(resources.Get("telegram.log.link_permission"), message.Chat.ID, userID(message), senderChat, target, permitted, message.MessageID)
 	return true, nil
 }
 
 func linkPermissionTarget(message *telegram.Message, args string) (int64, error) {
 	if args != "" {
 		if message.ReplyToMessage != nil {
-			return 0, errors.New("use either a reply or a numeric user ID for link permission")
+			return 0, errors.New(resources.Get("telegram.error.link_permission_target_ambiguous"))
 		}
 		id, err := strconv.ParseInt(args, 10, 64)
 		if err != nil || id <= 0 {
-			return 0, errors.New("link permission requires a reply to a user or a positive numeric user ID")
+			return 0, errors.New(resources.Get("telegram.error.link_permission_target_invalid"))
 		}
 		return id, nil
 	}
 	reply := message.ReplyToMessage
 	if reply == nil || reply.Chat.ID != message.Chat.ID || reply.SenderChat != nil || reply.From == nil || reply.From.ID <= 0 || reply.From.IsBot {
-		return 0, errors.New("reply to a participant's message to grant or revoke link permission")
+		return 0, errors.New(resources.Get("telegram.error.link_permission_reply_required"))
 	}
 	return reply.From.ID, nil
 }

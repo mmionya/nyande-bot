@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
+
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -101,7 +102,7 @@ func (b *Bot) configureLLM(session *discordgo.Session, message *discordgo.Messag
 		}
 		permissions, err := session.UserChannelPermissions(message.Author.ID, message.ChannelID)
 		if err != nil {
-			log.Printf("[discord] LLM permissions check failed: %v", err)
+			log.Printf(resources.Get("discord.log.llm_permissions_failed"), err)
 			return resources.Get("discord_llm_settings_failed")
 		}
 		if permissions&(discordgo.PermissionAdministrator|discordgo.PermissionManageServer) == 0 {
@@ -116,10 +117,10 @@ func (b *Bot) configureLLM(session *discordgo.Session, message *discordgo.Messag
 		return resources.Get("discord_llm_settings_failed")
 	}
 	if err := b.llmSettings.setDisabled(llmScope(message), disabled); err != nil {
-		log.Printf("[discord] save LLM settings failed: %v", err)
+		log.Printf(resources.Get("discord.log.llm_settings_save_failed"), err)
 		return resources.Get("discord_llm_settings_failed")
 	}
-	log.Printf("[discord] llm_settings scope=%s enabled=%t", llmScope(message), !disabled)
+	log.Printf(resources.Get("discord.log.llm_settings"), llmScope(message), !disabled)
 	if disabled {
 		return resources.Get("discord_llm_disabled")
 	}

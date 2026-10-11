@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (d *Downloader) downloadYTDLP(ctx context.Context, value *url.URL) (Result, error) {
@@ -92,7 +94,7 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 		if ytdlpSizeLimitOutput(detail) {
 			return Result{}, fmt.Errorf("%w: %s", errYTDLPMediaTooLarge, detail)
 		}
-		return Result{}, fmt.Errorf("yt-dlp failed: %w: %s", err, detail)
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.yt_dlp_failed"), err, detail)
 	}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
@@ -145,7 +147,7 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 				"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
 			}[contentType]
 			if extension == "" {
-				return Result{}, fmt.Errorf("yt-dlp downloaded an unsupported photo format %q", contentType)
+				return Result{}, fmt.Errorf(resources.Get("downloader.error.yt_dlp_downloaded_an_unsupported_photo_format"), contentType)
 			}
 			name = strings.TrimSuffix(name, filepath.Ext(name)) + extension
 		}
@@ -222,8 +224,8 @@ func ytdlpSizeLimitOutput(value string) bool {
 }
 
 var (
-	errYTDLPNoMedia       = errors.New("yt-dlp produced no supported media")
-	errYTDLPMediaTooLarge = errors.New("yt-dlp media is too large")
+	errYTDLPNoMedia       = errors.New(resources.Get("downloader.error.yt_dlp_produced_no_supported_media"))
+	errYTDLPMediaTooLarge = errors.New(resources.Get("downloader.error.yt_dlp_media_is_too_large"))
 )
 
 func ytdlpCaption(filename string, titleOnly bool) string {

@@ -31,27 +31,27 @@ func (b *Bot) handleMediaURL(ctx context.Context, message *telegram.Message, med
 // partial sends accurately instead of treating a displayed error as success.
 func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Message, mediaURL string) ([]telegram.Message, error) {
 	started := time.Now()
-	log.Printf("[media] download_started platform=telegram chat=%d user=%d msg=%d url=%q", message.Chat.ID, userID(message), message.MessageID, logutil.URL(mediaURL))
+	log.Printf(resources.Get("telegram.log.download_started"), message.Chat.ID, userID(message), message.MessageID, logutil.URL(mediaURL))
 	b.state.MediaTotal.Add(1)
 	status, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("downloader.status.downloading"), message.MessageID, nil)
 	if err != nil {
-		log.Printf("[media] status_failed platform=telegram chat=%d msg=%d elapsed_ms=%d", message.Chat.ID, message.MessageID, time.Since(started).Milliseconds())
+		log.Printf(resources.Get("telegram.log.media_status_failed"), message.Chat.ID, message.MessageID, time.Since(started).Milliseconds())
 		return nil, err
 	}
 	result, err := b.downloader.Download(ctx, mediaURL)
 	if err == nil && len(result.Items) == 0 {
-		err = errors.New("downloader returned no media")
+		err = errors.New(resources.Get("telegram.error.download_empty"))
 	}
 	if err != nil {
 		b.state.MediaErrors.Add(1)
-		log.Printf("[media] download_failed platform=telegram chat=%d msg=%d url=%q elapsed_ms=%d: %v", message.Chat.ID, message.MessageID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
+		log.Printf(resources.Get("telegram.log.download_failed"), message.Chat.ID, message.MessageID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
 		_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID,
 			resources.Format("downloader.error.failed", map[string]any{"error": humanDownloadError(mediaURL, err)}), nil)
 		return nil, err
 	}
-	log.Printf("[media] downloaded platform=telegram chat=%d msg=%d source=%q items=%d elapsed_ms=%d", message.Chat.ID, message.MessageID, result.Source, len(result.Items), time.Since(started).Milliseconds())
+	log.Printf(resources.Get("telegram.log.download_completed"), message.Chat.ID, message.MessageID, result.Source, len(result.Items), time.Since(started).Milliseconds())
 	for index, item := range result.Items {
-		log.Printf("[media] file platform=telegram chat=%d msg=%d index=%d kind=%q name=%q bytes=%d", message.Chat.ID, message.MessageID, index+1, item.Kind, item.Name, len(item.Data))
+		log.Printf(resources.Get("telegram.log.download_file"), message.Chat.ID, message.MessageID, index+1, item.Kind, item.Name, len(item.Data))
 	}
 	switch result.Source {
 	case "tiktok":
@@ -74,7 +74,7 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 	lock.Lock()
 	defer lock.Unlock()
 	sendStarted := time.Now()
-	log.Printf("[media] send_started platform=telegram chat=%d msg=%d items=%d", message.Chat.ID, message.MessageID, len(result.Items))
+	log.Printf(resources.Get("telegram.log.media_send_started"), message.Chat.ID, message.MessageID, len(result.Items))
 	_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID, resources.Get("downloader.status.sending"), nil)
 	sent, sendErr := b.sendDownloadedMedia(ctx, message, result)
 	if len(sent) > 0 {
@@ -88,13 +88,13 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 	}
 	if sendErr != nil {
 		b.state.MediaErrors.Add(1)
-		log.Printf("[media] send_failed platform=telegram chat=%d msg=%d sent=%d expected=%d elapsed_ms=%d: %v", message.Chat.ID, message.MessageID, len(sent), len(result.Items), time.Since(sendStarted).Milliseconds(), sendErr)
+		log.Printf(resources.Get("telegram.log.media_send_failed"), message.Chat.ID, message.MessageID, len(sent), len(result.Items), time.Since(sendStarted).Milliseconds(), sendErr)
 		_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID,
 			resources.Get("downloader.error.telegram_send"), nil)
 		return sent, sendErr
 	}
 	_ = b.telegram.DeleteMessage(ctx, message.Chat.ID, status.MessageID)
-	log.Printf("[media] sent platform=telegram chat=%d msg=%d items=%d send_ms=%d total_ms=%d", message.Chat.ID, message.MessageID, len(sent), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
+	log.Printf(resources.Get("telegram.log.media_sent"), message.Chat.ID, message.MessageID, len(sent), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
 	return sent, nil
 }
 
@@ -127,7 +127,7 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 				start = end
 				continue
 			}
-			log.Printf("[media] album_fallback platform=telegram chat=%d msg=%d items=%d: %v", message.Chat.ID, message.MessageID, len(chunk), err)
+			log.Printf(resources.Get("telegram.log.album_fallback"), message.Chat.ID, message.MessageID, len(chunk), err)
 		}
 		upload := uploads[start]
 		sentMessage, err := b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
@@ -182,7 +182,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
-		log.Printf("[llm] media collection failed: %v", err)
+		log.Printf(resources.Get("telegram.log.media_collection_failed"), err)
 	}
 	images := make([]llm.Image, 0)
 	transcripts := make([]string, 0)
@@ -196,7 +196,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			if b.cfg.LLMVision {
 				frames, frameErr := extractVideoFrames(ctx, attachment.Data, attachment.Name, b.cfg.LLMVideoFrames)
 				if frameErr != nil {
-					log.Printf("[llm] video frames failed: %v", frameErr)
+					log.Printf(resources.Get("telegram.log.video_frames_failed"), frameErr)
 				} else {
 					images = append(images, frames...)
 				}
@@ -204,7 +204,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			if b.cfg.WhisperEnabled {
 				transcript, transcriptErr := b.transcribe(ctx, attachment, true)
 				if transcriptErr != nil {
-					log.Printf("[llm] video transcription failed: %v", transcriptErr)
+					log.Printf(resources.Get("telegram.log.video_transcription_failed"), transcriptErr)
 				} else if transcript != "" {
 					transcripts = append(transcripts, transcript)
 				}
@@ -213,7 +213,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			if b.cfg.WhisperEnabled {
 				transcript, transcriptErr := b.transcribe(ctx, attachment, false)
 				if transcriptErr != nil {
-					log.Printf("[llm] audio transcription failed: %v", transcriptErr)
+					log.Printf(resources.Get("telegram.log.audio_transcription_failed"), transcriptErr)
 				} else if transcript != "" {
 					transcripts = append(transcripts, transcript)
 				}
@@ -226,14 +226,14 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	if text == "" && len(images) == 0 && len(transcripts) == 0 {
 		if err != nil && isFileTooBig(err) {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Отправь файл размером до 20 МБ :3",
+				resources.Get("telegram.media.file_too_large"),
 				message.MessageID, nil)
 			return sendErr
 		}
 		return nil
 	}
 	if err != nil && isFileTooBig(err) {
-		text += "\n\n[Системное уведомление: прикреплённый пользователем медиафайл весит больше 20 МБ, поэтому Telegram Bot API не разрешил боту его скачать. Объясни пользователю, что файл превышает лимит Telegram для ботов в 20 МБ]"
+		text += resources.Get("telegram.prompt.media_too_large")
 	}
 	var mediaSpecs []string
 	for _, att := range attachments {
@@ -242,7 +242,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 		}
 	}
 	if len(mediaSpecs) > 0 {
-		text += "\n\n[Технические характеристики прикреплённого медиа:\n" + strings.Join(mediaSpecs, "\n\n") + "]"
+		text += resources.Format("telegram.prompt.media_specs", map[string]any{"specs": strings.Join(mediaSpecs, "\n\n")})
 	}
 
 	b.state.LLMCalls.Add(1)
@@ -262,7 +262,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	})
 	if err != nil {
 		b.state.LLMErrors.Add(1)
-		log.Printf("[llm] chat=%d failed: %v", message.Chat.ID, err)
+		log.Printf(resources.Get("telegram.log.llm_failed"), message.Chat.ID, err)
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
 			resources.Format("llm.error.request_failed", map[string]any{"error": err}), message.MessageID, nil)
 		return sendErr
@@ -423,13 +423,13 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 	var combined error
 	for _, descriptor := range descriptors {
 		if descriptor.fileSize > 20*1024*1024 {
-			combined = errors.Join(combined, fmt.Errorf("файл %s (%s) превышает лимит Telegram для скачивания ботами (максимум 20 МБ)", descriptor.name, formatFileSize(descriptor.fileSize)))
+			combined = errors.Join(combined, fmt.Errorf(resources.Get("telegram.error.media_too_large"), descriptor.name, formatFileSize(descriptor.fileSize)))
 			continue
 		}
 		data, filePath, err := b.telegram.DownloadFile(ctx, descriptor.fileID, b.cfg.MaxFileSize)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "file is too big") {
-				err = fmt.Errorf("файл %s превышает лимит Telegram для скачивания ботами (максимум 20 МБ): %w", descriptor.name, err)
+				err = fmt.Errorf(resources.Get("telegram.error.download_too_large"), descriptor.name, err)
 			}
 			combined = errors.Join(combined, err)
 			continue
@@ -500,11 +500,11 @@ func extractVideoFrames(ctx context.Context, data []byte, name string, count int
 	probe := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input)
 	probeOutput, err := probe.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("ffprobe failed: %w: %s", err, strings.TrimSpace(string(probeOutput)))
+		return nil, fmt.Errorf(resources.Get("telegram.error.ffprobe_failed"), err, strings.TrimSpace(string(probeOutput)))
 	}
 	duration, err := strconv.ParseFloat(strings.TrimSpace(string(probeOutput)), 64)
 	if err != nil || duration <= 0 {
-		return nil, errors.New("invalid video duration")
+		return nil, errors.New(resources.Get("telegram.error.video_duration"))
 	}
 	frames := make([]llm.Image, 0, count)
 	for index := 0; index < count; index++ {
@@ -515,7 +515,7 @@ func extractVideoFrames(ctx context.Context, data []byte, name string, count int
 			"-vf", `scale=min(1280\,iw):-2`, "-q:v", "3", "-y", output)
 		commandOutput, commandErr := command.CombinedOutput()
 		if commandErr != nil {
-			log.Printf("[llm] frame %d failed: %v: %s", index, commandErr, strings.TrimSpace(string(commandOutput)))
+			log.Printf(resources.Get("telegram.log.frame_failed"), index, commandErr, strings.TrimSpace(string(commandOutput)))
 			continue
 		}
 		frame, readErr := os.ReadFile(output)
@@ -524,7 +524,7 @@ func extractVideoFrames(ctx context.Context, data []byte, name string, count int
 		}
 	}
 	if len(frames) == 0 {
-		return nil, errors.New("ffmpeg produced no video frames")
+		return nil, errors.New(resources.Get("telegram.error.video_frames_empty"))
 	}
 	return frames, nil
 }
@@ -545,7 +545,7 @@ func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, video
 			"-i", input, "-vn", "-ac", "1", "-ar", "16000", "-y", audio)
 		output, err := command.CombinedOutput()
 		if err != nil {
-			return "", fmt.Errorf("ffmpeg audio extraction failed: %w: %s", err, strings.TrimSpace(string(output)))
+			return "", fmt.Errorf(resources.Get("telegram.error.audio_extraction"), err, strings.TrimSpace(string(output)))
 		}
 		input = audio
 	}
@@ -556,11 +556,11 @@ func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, video
 	command := exec.CommandContext(ctx, b.cfg.WhisperPath, arguments...)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("Whisper failed: %w: %s", err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf(resources.Get("telegram.error.whisper_failed"), err, strings.TrimSpace(string(output)))
 	}
 	textFiles, _ := filepath.Glob(filepath.Join(directory, "*.txt"))
 	if len(textFiles) == 0 {
-		return "", errors.New("Whisper produced no transcript")
+		return "", errors.New(resources.Get("telegram.error.transcript_empty"))
 	}
 	transcript, err := os.ReadFile(textFiles[0])
 	return strings.TrimSpace(string(transcript)), err

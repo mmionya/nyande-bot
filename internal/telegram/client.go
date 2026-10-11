@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const maxRequestAttempts = 4
@@ -35,7 +37,7 @@ func New(token string) *Client {
 			Timeout: 70 * time.Second,
 			CheckRedirect: func(request *http.Request, via []*http.Request) error {
 				if len(via) >= 5 {
-					return errors.New("too many redirects")
+					return errors.New(resources.Get("telegram.error.too_many_redirects"))
 				}
 				return nil
 			},
@@ -98,7 +100,7 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 
 		var raw apiEnvelope[json.RawMessage]
 		if err := json.Unmarshal(responseData, &raw); err != nil {
-			last = fmt.Errorf("Telegram API returned invalid JSON (HTTP %d)", response.StatusCode)
+			last = fmt.Errorf(resources.Get("telegram.error.api_returned_invalid_json_http"), response.StatusCode)
 			if retryAmbiguous && attempt < maxRequestAttempts && response.StatusCode >= 500 {
 				time.Sleep(time.Duration(attempt) * time.Second)
 				continue
@@ -110,7 +112,7 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 				return nil
 			}
 			if err := json.Unmarshal(raw.Result, result); err != nil {
-				return fmt.Errorf("decode Telegram %s result: %w", method, err)
+				return fmt.Errorf(resources.Get("telegram.error.decode_telegram_result"), method, err)
 			}
 			return nil
 		}
@@ -127,7 +129,7 @@ func (c *Client) do(ctx context.Context, method, contentType string, body []byte
 		if delay <= 0 {
 			delay = time.Duration(attempt) * time.Second
 		}
-		log.Printf("[telegram] temporary failure in %s, retry %d/%d in %s", method, attempt, maxRequestAttempts, delay)
+		log.Printf(resources.Get("telegram.log.temporary_failure_in_retry_in"), method, attempt, maxRequestAttempts, delay)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -249,7 +251,7 @@ func (c *Client) DownloadFile(ctx context.Context, fileID string, maxBytes int64
 		return nil, "", err
 	}
 	if file.FileSize > maxBytes && maxBytes > 0 {
-		return nil, "", fmt.Errorf("Telegram file is too large: %d bytes", file.FileSize)
+		return nil, "", fmt.Errorf(resources.Get("telegram.error.file_is_too_large_bytes"), file.FileSize)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.fileBase+file.FilePath, nil)
 	if err != nil {
@@ -261,7 +263,7 @@ func (c *Client) DownloadFile(ctx context.Context, fileID string, maxBytes int64
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, "", fmt.Errorf("Telegram file HTTP %d", response.StatusCode)
+		return nil, "", fmt.Errorf(resources.Get("telegram.error.file_http"), response.StatusCode)
 	}
 	limit := maxBytes
 	if limit <= 0 {
@@ -272,7 +274,7 @@ func (c *Client) DownloadFile(ctx context.Context, fileID string, maxBytes int64
 		return nil, "", err
 	}
 	if int64(len(data)) > limit {
-		return nil, "", fmt.Errorf("Telegram file exceeds %d bytes", limit)
+		return nil, "", fmt.Errorf(resources.Get("telegram.error.file_exceeds_bytes"), limit)
 	}
 	return data, file.FilePath, nil
 }
@@ -376,7 +378,7 @@ func (c *Client) SendAnimation(ctx context.Context, chatID int64, animationURL s
 
 func (c *Client) SendMediaGroup(ctx context.Context, chatID int64, uploads []Upload, replyTo int) ([]Message, error) {
 	if len(uploads) < 2 || len(uploads) > 10 {
-		return nil, fmt.Errorf("media group must contain 2..10 items")
+		return nil, errors.New(resources.Get("telegram.error.media_group_must_contain_2_10_items"))
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

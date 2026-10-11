@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/bwmarrin/discordgo"
+
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -23,21 +24,21 @@ func discordApplicationCommands() []*discordgo.ApplicationCommand {
 		commands = append(commands, &discordgo.ApplicationCommand{Name: sub.Name, Description: sub.Description, Options: sub.Options, DMPermission: music.DMPermission})
 	}
 	commands = append(commands,
-		&discordgo.ApplicationCommand{Name: "botban", Description: "Заблокировать доступ к боту (только владелец)", Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: "Пользователь", Required: true}}},
-		&discordgo.ApplicationCommand{Name: "botunban", Description: "Вернуть доступ к боту (только владелец)", Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: "Пользователь", Required: true}}},
-		&discordgo.ApplicationCommand{Name: "help", Description: "Все команды и возможности бота"},
-		&discordgo.ApplicationCommand{Name: "ping", Description: "Проверить, работает ли бот"},
-		&discordgo.ApplicationCommand{Name: "stats", Description: "Статистика бота"},
-		&discordgo.ApplicationCommand{Name: "reset", Description: "Очистить историю диалога с LLM"},
-		&discordgo.ApplicationCommand{Name: "llm", Description: "Включить, выключить или проверить LLM", Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionString, Name: "mode", Description: "Действие; без параметра — текущий статус", Choices: []*discordgo.ApplicationCommandOptionChoice{{Name: "Статус", Value: "status"}, {Name: "Включить", Value: "on"}, {Name: "Выключить", Value: "off"}}}}},
-		&discordgo.ApplicationCommand{Name: "gif", Description: "Сделать GIF из видео по ссылке или из вложения", Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionString, Name: "url", Description: "Ссылка на видео", MaxLength: 2000}, {Type: discordgo.ApplicationCommandOptionAttachment, Name: "video", Description: "Видеофайл для преобразования"}}},
+		&discordgo.ApplicationCommand{Name: "botban", Description: resources.Get("discord.command.botban"), Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: resources.Get("discord.command.user"), Required: true}}},
+		&discordgo.ApplicationCommand{Name: "botunban", Description: resources.Get("discord.command.botunban"), Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionUser, Name: "user", Description: resources.Get("discord.command.user"), Required: true}}},
+		&discordgo.ApplicationCommand{Name: "help", Description: resources.Get("discord.command.help")},
+		&discordgo.ApplicationCommand{Name: "ping", Description: resources.Get("discord.command.ping")},
+		&discordgo.ApplicationCommand{Name: "stats", Description: resources.Get("discord.command.stats")},
+		&discordgo.ApplicationCommand{Name: "reset", Description: resources.Get("discord.command.reset")},
+		&discordgo.ApplicationCommand{Name: "llm", Description: resources.Get("discord.command.llm"), Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionString, Name: "mode", Description: resources.Get("discord.command.llm_mode"), Choices: []*discordgo.ApplicationCommandOptionChoice{{Name: resources.Get("discord.command.status"), Value: "status"}, {Name: resources.Get("discord.command.enable"), Value: "on"}, {Name: resources.Get("discord.command.disable"), Value: "off"}}}}},
+		&discordgo.ApplicationCommand{Name: "gif", Description: resources.Get("discord.command.gif"), Options: []*discordgo.ApplicationCommandOption{{Type: discordgo.ApplicationCommandOptionString, Name: "url", Description: resources.Get("discord.command.gif_url"), MaxLength: 2000}, {Type: discordgo.ApplicationCommandOptionAttachment, Name: "video", Description: resources.Get("discord.command.gif_video")}}},
 	)
 	return commands
 }
 
 func (b *Bot) registerDiscordCommands() error {
 	if b.session.State == nil || b.session.State.User == nil {
-		return errors.New("Discord identity unavailable")
+		return errors.New(resources.Get("discord.error.identity_unavailable"))
 	}
 	var errs []error
 	for _, command := range discordApplicationCommands() {
@@ -46,7 +47,7 @@ func (b *Bot) registerDiscordCommands() error {
 		// before the request to finish without consuming a separate deadline.
 		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", command, discordgo.WithContext(b.currentContext()))
 		if err != nil {
-			errs = append(errs, fmt.Errorf("/%s: %w", command.Name, err))
+			errs = append(errs, fmt.Errorf(resources.Get("discord.error.register_command"), command.Name, err))
 		}
 	}
 	return errors.Join(errs...)
@@ -69,7 +70,7 @@ func (b *Bot) handleGeneralSlash(s *discordgo.Session, i *discordgo.Interaction)
 		return false
 	}
 	if musicActor(i) == nil {
-		musicPrivate(s, i, "Не удалось определить автора команды.")
+		musicPrivate(s, i, resources.Get("discord.command.missing_actor"))
 		return true
 	}
 	if !musicDefer(s, i, false) {
@@ -126,7 +127,7 @@ func (b *Bot) slashGIF(s *discordgo.Session, i *discordgo.Interaction, data disc
 	}
 	source := gifSource(message)
 	if source == "" {
-		musicEdit(s, i, &discordgo.InteractionResponseData{Content: "Укажи ссылку в url или прикрепи видео в video."})
+		musicEdit(s, i, &discordgo.InteractionResponseData{Content: resources.Get("discord.gif.slash_usage")})
 		return
 	}
 	// Acknowledge first, then wait for the shared media concurrency limit.
@@ -140,13 +141,13 @@ func (b *Bot) slashGIF(s *discordgo.Session, i *discordgo.Interaction, data disc
 		return
 	}
 	if b.access.IsBanned(message.Author.ID) {
-		musicEdit(s, i, &discordgo.InteractionResponseData{Content: "Доступ к боту заблокирован."})
+		musicEdit(s, i, &discordgo.InteractionResponseData{Content: resources.Get("access.blocked")})
 		return
 	}
 	b.mediaTotal.Add(1)
 	fail := func(text string, err error) {
 		b.mediaErrors.Add(1)
-		log.Printf("[discord] slash gif failed: %v", err)
+		log.Printf(resources.Get("discord.log.slash_gif_failed"), err)
 		musicEdit(s, i, &discordgo.InteractionResponseData{Content: text})
 	}
 	result, err := b.downloader.Download(ctx, source)
@@ -162,7 +163,7 @@ func (b *Bot) slashGIF(s *discordgo.Session, i *discordgo.Interaction, data disc
 		}
 	}
 	if video == nil {
-		fail(resources.Get("discord_gif_no_video"), errors.New("no video"))
+		fail(resources.Get("discord_gif_no_video"), errors.New(resources.Get("discord.error.no_video")))
 		return
 	}
 	gif, err := convertGIF(ctx, video, b.cfg.MaxFileSize)

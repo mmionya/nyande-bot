@@ -82,7 +82,7 @@ func (b *Bot) handleLLM(session *discordgo.Session, message *discordgo.Message) 
 	}
 	chatID, err := strconv.ParseInt(message.ChannelID, 10, 64)
 	if err != nil {
-		log.Printf("[discord] invalid LLM channel ID: %v", err)
+		log.Printf(resources.Get("discord.log.llm_invalid_channel"), err)
 		return
 	}
 	conversation := b.conversation(message.ChannelID)
@@ -109,13 +109,13 @@ func (b *Bot) handleLLM(session *discordgo.Session, message *discordgo.Message) 
 	}
 	answer, err := b.llm.Ask(ctx, llm.Request{ChatID: chatID, UserName: message.Author.Username, Text: text})
 	if err != nil {
-		log.Printf("[discord] LLM request failed channel=%s: %v", message.ChannelID, err)
+		log.Printf(resources.Get("discord.log.llm_request_failed"), message.ChannelID, err)
 		answer = resources.Get("discord_llm_failed")
 	} else if strings.TrimSpace(answer) == "" {
 		answer = resources.Get("discord_llm_failed")
 	}
 	if err := sendLLMReply(session, message, answer); err != nil {
-		log.Printf("[discord] LLM reply failed channel=%s: %v", message.ChannelID, err)
+		log.Printf(resources.Get("discord.log.llm_reply_failed"), message.ChannelID, err)
 	}
 }
 

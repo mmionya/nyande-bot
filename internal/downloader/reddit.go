@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result, error) {
@@ -31,7 +33,7 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 	if err == nil {
 		defer response.Body.Close()
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			log.Printf("[reddit] JSON request failed: %v; trying yt-dlp", redditError(response.StatusCode))
+			log.Printf(resources.Get("downloader.log.json_request_failed_trying_yt_dlp"), redditError(response.StatusCode))
 		}
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			var payload any
@@ -84,7 +86,7 @@ func (d *Downloader) resolveRedditURL(ctx context.Context, value *url.URL) (*url
 	}
 	response.Body.Close()
 	if !hostMatches(response.Request.URL.Hostname(), "reddit.com", "redd.it") {
-		return nil, errors.New("Reddit short link redirected outside Reddit")
+		return nil, errors.New(resources.Get("reddit.error.redirect_outside"))
 	}
 	return response.Request.URL, nil
 }
@@ -156,5 +158,5 @@ func redditImageHost(host string) bool {
 }
 
 func redditError(status int) error {
-	return fmt.Errorf("Reddit HTTP %d", status)
+	return fmt.Errorf(resources.Get("downloader.error.reddit_http"), status)
 }

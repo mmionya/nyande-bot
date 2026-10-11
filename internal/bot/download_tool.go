@@ -12,6 +12,7 @@ import (
 	"github.com/mmionya/nyande-bot/internal/downloader"
 	"github.com/mmionya/nyande-bot/internal/llm"
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (b *Bot) downloadMediaTool(message *telegram.Message) llm.Tool {
@@ -27,30 +28,24 @@ func newDownloadMediaTool(deliver func(context.Context, string) (int, error)) ll
 	var mu sync.Mutex
 	attempts := make(map[string]string)
 	return llm.Tool{
-		Name: "download_media",
-		Description: "Download photos or videos from a URL and send the actual files to the current Telegram chat. " +
-			"Use when the user asks to find and send a video/photo, or download media. " +
-			"If no URL was provided, first use search_tiktok for TikTok requests when available, otherwise web_search, to find a matching media post, then call this tool with its real URL. " +
-			"Supports TikTok, Instagram, X/Twitter, Reddit, Xiaohongshu, Pinterest, YouTube and direct image/video URLs. " +
-			"Prefer an individual post/video URL; search results pages and ordinary articles cannot be downloaded. " +
-			"Never invent a URL or claim media was sent until this tool confirms delivery. " +
-			"Only send media requested by the user. The destination is always this chat.",
+		Name:        "download_media",
+		Description: resources.Get("tool.download_media.description"),
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{"url": map[string]any{
-				"type": "string", "description": "Actual HTTP(S) media post or direct file URL obtained from the user, web search, or a webpage. Not a search query.",
+				"type": "string", "description": resources.Get("tool.download_media.url_description"),
 			}},
 			"required": []string{"url"}, "additionalProperties": false,
 		},
 		Execute: func(ctx context.Context, args map[string]string) (string, error) {
 			rawURL, err := mediaToolURL(args["url"])
 			if err != nil {
-				return "Cannot download media: " + err.Error(), nil
+				return resources.Format("tool.download_media.invalid_url", map[string]any{"error": err.Error()}), nil
 			}
 			mu.Lock()
 			defer mu.Unlock()
 			if outcome, exists := attempts[rawURL]; exists {
-				return "This URL was already attempted for this request; no files were sent again. Previous outcome: " + outcome, nil
+				return resources.Format("tool.download_media.already_attempted", map[string]any{"outcome": outcome}), nil
 			}
 			if err := ctx.Err(); err != nil {
 				return "", err
@@ -61,13 +56,13 @@ func newDownloadMediaTool(deliver func(context.Context, string) (int, error)) ll
 			var outcome string
 			switch {
 			case err != nil && count > 0:
-				outcome = fmt.Sprintf("Only %d media files were confirmed sent to this chat; sending the remaining files failed. Do not claim full success or resend this URL.", count)
+				outcome = fmt.Sprintf(resources.Get("tool.download_media.partial"), count)
 			case err != nil:
-				outcome = "Media delivery was not confirmed: " + humanDownloadError(rawURL, err) + ". Do not claim it was sent. You may find a different source URL."
+				outcome = resources.Format("tool.download_media.delivery_unconfirmed", map[string]any{"error": humanDownloadError(rawURL, err)})
 			case count == 0:
-				outcome = "No media files were sent. Find a different direct media or supported post URL."
+				outcome = resources.Get("tool.download_media.empty")
 			default:
-				outcome = fmt.Sprintf("Successfully sent %d media files to the current chat in reply to the user's message. Briefly acknowledge delivery; do not send this URL again.", count)
+				outcome = fmt.Sprintf(resources.Get("tool.download_media.sent"), count)
 			}
 			attempts[rawURL] = outcome
 			return outcome, nil
@@ -78,14 +73,14 @@ func newDownloadMediaTool(deliver func(context.Context, string) (int, error)) ll
 func mediaToolURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
-		return "", errors.New("provide an HTTP(S) URL without embedded credentials")
+		return "", errors.New(resources.Get("tool.download_media.url_required"))
 	}
 	u.Fragment = ""
 	if isPrivateURL(u.String()) {
-		return "", errors.New("local or private network addresses are not allowed")
+		return "", errors.New(resources.Get("tool.download_media.private_url"))
 	}
 	if !downloader.Supported(u.String()) {
-		return "", errors.New("unsupported page; use a supported media post or a direct JPG, PNG, WebP, GIF, MP4, MOV or WebM file URL")
+		return "", errors.New(resources.Get("tool.download_media.unsupported"))
 	}
 	return u.String(), nil
 }

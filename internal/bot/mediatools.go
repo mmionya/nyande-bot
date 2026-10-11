@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 	_ "golang.org/x/image/webp"
 )
 
@@ -47,10 +48,10 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 		cfg, format, err := image.DecodeConfig(bytes.NewReader(att.Data))
 		if err == nil && cfg.Width > 0 && cfg.Height > 0 {
 			aspect := formatAspect(cfg.Width, cfg.Height)
-			return fmt.Sprintf("🖼 **Фотография**\n• Разрешение: `%dx%d px` (%s)\n• Формат: `%s`\n• Размер файла: `%s`",
+			return fmt.Sprintf(resources.Get("telegram.mediainfo.photo_dimensions"),
 				cfg.Width, cfg.Height, aspect, strings.ToUpper(format), sizeStr), nil
 		}
-		return fmt.Sprintf("🖼 **Фотография**\n• Формат: `%s`\n• Размер файла: `%s`", att.MIME, sizeStr), nil
+		return fmt.Sprintf(resources.Get("telegram.mediainfo.photo"), att.MIME, sizeStr), nil
 	}
 
 	// For video/animation/audio, use ffprobe
@@ -71,12 +72,12 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 	cmd := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", input)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Sprintf("📁 **Медиафайл**\n• Имя: `%s`\n• MIME: `%s`\n• Размер: `%s`", att.Name, att.MIME, sizeStr), nil
+		return fmt.Sprintf(resources.Get("telegram.mediainfo.named_file"), att.Name, att.MIME, sizeStr), nil
 	}
 
 	var probed probeOutput
 	if err := json.Unmarshal(output, &probed); err != nil {
-		return fmt.Sprintf("📁 **Медиафайл**\n• MIME: `%s`\n• Размер: `%s`", att.MIME, sizeStr), nil
+		return fmt.Sprintf(resources.Get("telegram.mediainfo.file_type"), att.MIME, sizeStr), nil
 	}
 
 	var vStream, aStream *struct {
@@ -112,60 +113,60 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 		fps := parseFPS(vStream.RFrameRate)
 		aspect := formatAspect(vStream.Width, vStream.Height)
 		var bld strings.Builder
-		header := "🎬 **Видео**"
+		header := resources.Get("telegram.mediainfo.video_header")
 		if att.Kind == "animation" {
-			header = "🎞 **Анимация (GIF)**"
+			header = resources.Get("telegram.mediainfo.animation_header")
 		} else if att.Kind == "video_note" {
-			header = "⭕ **Видеосообщение (кружочек)**"
+			header = resources.Get("telegram.mediainfo.round_header")
 		}
 		fmt.Fprintf(&bld, "%s\n", header)
-		fmt.Fprintf(&bld, "• Разрешение: `%dx%d px` (%s)\n", vStream.Width, vStream.Height, aspect)
+		fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.resolution"), vStream.Width, vStream.Height, aspect)
 		if fps > 0 {
-			fmt.Fprintf(&bld, "• Частота кадров: `%.2f fps`\n", fps)
+			fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.framerate"), fps)
 		}
 		if durationSec > 0 {
-			fmt.Fprintf(&bld, "• Длительность: `%s` (%.1f с)\n", durStr, durationSec)
+			fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.duration"), durStr, durationSec)
 		}
-		fmt.Fprintf(&bld, "• Видеокодек: `%s`\n", vStream.CodecName)
+		fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.video_codec"), vStream.CodecName)
 		if aStream != nil {
-			chStr := "моно"
+			chStr := resources.Get("telegram.mediainfo.mono")
 			if aStream.Channels == 2 {
-				chStr = "стерео"
+				chStr = resources.Get("telegram.mediainfo.stereo")
 			} else if aStream.Channels > 2 {
-				chStr = fmt.Sprintf("%d кан.", aStream.Channels)
+				chStr = fmt.Sprintf(resources.Get("telegram.mediainfo.channels"), aStream.Channels)
 			}
-			fmt.Fprintf(&bld, "• Аудиокодек: `%s` (%s Hz, %s)\n", aStream.CodecName, aStream.SampleRate, chStr)
+			fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.audio_codec"), aStream.CodecName, aStream.SampleRate, chStr)
 		}
 		if totalBitrate > 0 {
-			fmt.Fprintf(&bld, "• Общий битрейт: `%d kbps`\n", totalBitrate/1000)
+			fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.total_bitrate"), totalBitrate/1000)
 		}
-		fmt.Fprintf(&bld, "• Размер файла: `%s`", sizeStr)
+		fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.file_size"), sizeStr)
 		return bld.String(), nil
 	}
 
 	if aStream != nil {
-		header := "🎵 **Аудиозапись**"
+		header := resources.Get("telegram.mediainfo.audio_header")
 		if att.Kind == "voice" {
-			header = "🎙 **Голосовое сообщение**"
+			header = resources.Get("telegram.mediainfo.voice_header")
 		}
 		var bld strings.Builder
 		fmt.Fprintf(&bld, "%s\n", header)
 		if durationSec > 0 {
-			fmt.Fprintf(&bld, "• Длительность: `%s` (%.1f с)\n", durStr, durationSec)
+			fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.duration"), durStr, durationSec)
 		}
-		chStr := "моно"
+		chStr := resources.Get("telegram.mediainfo.mono")
 		if aStream.Channels == 2 {
-			chStr = "стерео"
+			chStr = resources.Get("telegram.mediainfo.stereo")
 		}
-		fmt.Fprintf(&bld, "• Аудиокодек: `%s` (%s Hz, %s)\n", aStream.CodecName, aStream.SampleRate, chStr)
+		fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.audio_codec"), aStream.CodecName, aStream.SampleRate, chStr)
 		if totalBitrate > 0 {
-			fmt.Fprintf(&bld, "• Битрейт: `%d kbps`\n", totalBitrate/1000)
+			fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.bitrate"), totalBitrate/1000)
 		}
-		fmt.Fprintf(&bld, "• Размер файла: `%s`", sizeStr)
+		fmt.Fprintf(&bld, resources.Get("telegram.mediainfo.file_size"), sizeStr)
 		return bld.String(), nil
 	}
 
-	return fmt.Sprintf("📁 **Медиафайл**\n• Размер: `%s`", sizeStr), nil
+	return fmt.Sprintf(resources.Get("telegram.mediainfo.file"), sizeStr), nil
 }
 
 func convertVideoToRound(ctx context.Context, data []byte, name string) ([]byte, error) {
@@ -195,7 +196,7 @@ func convertVideoToRound(ctx context.Context, data []byte, name string) ([]byte,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg round conversion failed: %w: %s", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf(resources.Get("telegram.error.round_conversion"), err, strings.TrimSpace(string(out)))
 	}
 	return os.ReadFile(output)
 }
@@ -224,7 +225,7 @@ func convertAudioToVoice(ctx context.Context, data []byte, name string) ([]byte,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg voice conversion failed: %w: %s", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf(resources.Get("telegram.error.voice_conversion"), err, strings.TrimSpace(string(out)))
 	}
 	return os.ReadFile(output)
 }
@@ -255,7 +256,7 @@ func convertVideoToGIF(ctx context.Context, data []byte, name string) ([]byte, e
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg animation conversion failed: %w: %s", err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf(resources.Get("telegram.error.gif_conversion"), err, strings.TrimSpace(string(out)))
 	}
 	return os.ReadFile(output)
 }
@@ -263,7 +264,7 @@ func convertVideoToGIF(ctx context.Context, data []byte, name string) ([]byte, e
 func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error {
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
-		logError("round attachments", err)
+		logError(resources.Get("telegram.log_context.round_attachments"), err)
 	}
 	var target *cachedAttachment
 	for i := range attachments {
@@ -275,12 +276,12 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 	if target == nil {
 		if err != nil && isFileTooBig(err) {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Пожалуйста, пришли видео размером до 20 МБ :3",
+				resources.Get("telegram.media.video_too_large"),
 				message.MessageID, nil)
 			return sendErr
 		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
-			"Пожалуйста, прикрепи видео к команде /round или ответь этой командой на видео сообщение :3",
+			resources.Get("telegram.round.usage"),
 			message.MessageID, nil)
 		return err
 	}
@@ -288,14 +289,14 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 	roundData, err := convertVideoToRound(ctx, target.Data, target.Name)
 	if err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf("Не удалось конвертировать видео в кружочек: %v", err),
+			fmt.Sprintf(resources.Get("telegram.round.convert_failed"), err),
 			message.MessageID, nil)
 		return sendErr
 	}
 
 	if _, err = b.telegram.SendVideoNote(ctx, message.Chat.ID, roundData, message.MessageID); err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf("Не удалось отправить кружочек: %v", err),
+			fmt.Sprintf(resources.Get("telegram.round.send_failed"), err),
 			message.MessageID, nil)
 		return errors.Join(err, sendErr)
 	}
@@ -305,7 +306,7 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error {
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
-		logError("voice attachments", err)
+		logError(resources.Get("telegram.log_context.voice_attachments"), err)
 	}
 	var target *cachedAttachment
 	for i := range attachments {
@@ -317,12 +318,12 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 	if target == nil {
 		if err != nil && isFileTooBig(err) {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Пожалуйста, пришли медиа размером до 20 МБ :3",
+				resources.Get("telegram.media.attachment_too_large"),
 				message.MessageID, nil)
 			return sendErr
 		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
-			"Пожалуйста, прикрепи аудио или видео к команде /voice или ответь этой командой на медиа :3",
+			resources.Get("telegram.voice.usage"),
 			message.MessageID, nil)
 		return err
 	}
@@ -330,14 +331,14 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 	voiceData, err := convertAudioToVoice(ctx, target.Data, target.Name)
 	if err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf("Не удалось конвертировать в голосовое сообщение: %v", err),
+			fmt.Sprintf(resources.Get("telegram.voice.convert_failed"), err),
 			message.MessageID, nil)
 		return sendErr
 	}
 
 	if _, err = b.telegram.SendVoice(ctx, message.Chat.ID, voiceData, "", message.MessageID); err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf("Не удалось отправить голосовое сообщение: %v", err),
+			fmt.Sprintf(resources.Get("telegram.voice.send_failed"), err),
 			message.MessageID, nil)
 		return errors.Join(err, sendErr)
 	}
@@ -347,7 +348,7 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
-		logError("gif attachments", err)
+		logError(resources.Get("telegram.log_context.gif_attachments"), err)
 	}
 	var target *cachedAttachment
 	for i := range attachments {
@@ -359,12 +360,12 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 	if target == nil {
 		if err != nil && isFileTooBig(err) {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ). Пожалуйста, пришли видео размером до 20 МБ :3",
+				resources.Get("telegram.media.video_too_large"),
 				message.MessageID, nil)
 			return sendErr
 		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
-			"Пожалуйста, прикрепи видео к команде /gif или ответь этой командой на видео :3",
+			resources.Get("telegram.gif.usage"),
 			message.MessageID, nil)
 		return err
 	}
@@ -372,7 +373,7 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 	gifData, err := convertVideoToGIF(ctx, target.Data, target.Name)
 	if err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf("Не удалось конвертировать видео в гифку: %v", err),
+			fmt.Sprintf(resources.Get("telegram.gif.convert_failed"), err),
 			message.MessageID, nil)
 		return sendErr
 	}
@@ -384,7 +385,7 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 		Data: gifData,
 	}, message.MessageID); err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf("Не удалось отправить гифку: %v", err),
+			fmt.Sprintf(resources.Get("telegram.gif.send_failed"), err),
 			message.MessageID, nil)
 		return errors.Join(err, sendErr)
 	}
@@ -394,17 +395,17 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 func (b *Bot) mediainfoCommand(ctx context.Context, message *telegram.Message) error {
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
-		logError("mediainfo attachments", err)
+		logError(resources.Get("telegram.log_context.mediainfo_attachments"), err)
 	}
 	if len(attachments) == 0 {
 		if err != nil && isFileTooBig(err) {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				"Файл слишком большой! Telegram Bot API не разрешает ботам скачивать файлы размером более 20 МБ (ㅠ﹏ㅠ)",
+				resources.Get("telegram.media.too_large"),
 				message.MessageID, nil)
 			return sendErr
 		}
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
-			"Пожалуйста, прикрепи фото, видео или аудио к команде /mediainfo или ответь этой командой на медиа :3",
+			resources.Get("telegram.mediainfo.usage"),
 			message.MessageID, nil)
 		return err
 	}
@@ -413,7 +414,7 @@ func (b *Bot) mediainfoCommand(ctx context.Context, message *telegram.Message) e
 	for _, att := range attachments {
 		info, err := inspectMedia(ctx, att)
 		if err != nil {
-			info = fmt.Sprintf("Ошибка анализа %s: %v", att.Name, err)
+			info = fmt.Sprintf(resources.Get("telegram.mediainfo.failed"), att.Name, err)
 		}
 		results = append(results, info)
 	}
@@ -466,12 +467,12 @@ func formatDuration(sec float64) string {
 
 func formatFileSize(bytes int64) string {
 	if bytes < 1024 {
-		return fmt.Sprintf("%d Б", bytes)
+		return fmt.Sprintf(resources.Get("telegram.file_size.bytes"), bytes)
 	}
 	if bytes < 1024*1024 {
-		return fmt.Sprintf("%.1f КБ", float64(bytes)/1024)
+		return fmt.Sprintf(resources.Get("telegram.file_size.kilobytes"), float64(bytes)/1024)
 	}
-	return fmt.Sprintf("%.2f МБ", float64(bytes)/(1024*1024))
+	return fmt.Sprintf(resources.Get("telegram.file_size.megabytes"), float64(bytes)/(1024*1024))
 }
 
 func formatAspect(w, h int) string {
@@ -494,7 +495,7 @@ func formatAspect(w, h int) string {
 
 func logError(context string, err error) {
 	if err != nil {
-		fmt.Printf("[%s] error: %v\n", context, err)
+		fmt.Printf(resources.Get("telegram.log.attachment_error"), context, err)
 	}
 }
 

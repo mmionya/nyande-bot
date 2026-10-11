@@ -68,7 +68,7 @@ func (a *allowlist) Allows(raw string) bool {
 func (a *allowlist) Add(raw string) (string, bool, error) {
 	domain := normalizeDomain(raw)
 	if domain == "" {
-		return "", false, errors.New("invalid domain")
+		return "", false, errors.New(resources.Get("telegram.error.invalid_domain"))
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -229,7 +229,7 @@ func (b *Bot) configureLinkDeletion(ctx context.Context, message *telegram.Messa
 		return err
 	}
 	if b.linkConfig == nil {
-		return errors.New("link deletion settings are unavailable")
+		return errors.New(resources.Get("telegram.error.link_settings_unavailable"))
 	}
 	if err := b.linkConfig.Set(message.Chat.ID, enabled); err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.moderation.save_failed"), message.MessageID, nil)

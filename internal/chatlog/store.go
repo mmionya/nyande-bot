@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/mmionya/nyande-bot/internal/storagecrypt"
+	"github.com/mmionya/nyande-bot/resources"
 	_ "modernc.org/sqlite"
 )
 
@@ -54,7 +55,7 @@ const keyCheck = "nyande-chatlog-aes-gcm-v1"
 func Open(path string, maxPerChat int, key []byte) (*Store, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil, errors.New("chat log database path is empty")
+		return nil, errors.New(resources.Get("chatlog.error.database_path_is_empty"))
 	}
 	cipher, err := storagecrypt.New(key)
 	if err != nil {
@@ -65,11 +66,11 @@ func Open(path string, maxPerChat int, key []byte) (*Store, error) {
 	}
 	if path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return nil, fmt.Errorf("create chat log directory: %w", err)
+			return nil, fmt.Errorf(resources.Get("chatlog.error.create_chat_log_directory"), err)
 		}
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("open chat log file: %w", err)
+			return nil, fmt.Errorf(resources.Get("chatlog.error.open_chat_log_file"), err)
 		}
 		if err := file.Close(); err != nil {
 			return nil, err
@@ -82,7 +83,7 @@ func Open(path string, maxPerChat int, key []byte) (*Store, error) {
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("open chat log database: %w", err)
+		return nil, fmt.Errorf(resources.Get("chatlog.error.open_chat_log_database"), err)
 	}
 	db.SetMaxOpenConns(1)
 	store := &Store{db: db, maxPerChat: maxPerChat, cipher: cipher}
@@ -99,7 +100,7 @@ func (s *Store) initialize() error {
 		`PRAGMA temp_store = MEMORY`, `PRAGMA journal_mode = WAL`,
 	} {
 		if _, err := s.db.Exec(statement); err != nil {
-			return fmt.Errorf("initialize chat log database: %w", err)
+			return fmt.Errorf(resources.Get("chatlog.error.initialize_chat_log_database"), err)
 		}
 	}
 	tx, err := s.db.Begin()
@@ -125,34 +126,34 @@ func (s *Store) initialize() error {
 	switch mode {
 	case "aes-gcm-v1":
 		if s.cipher == nil {
-			return errors.New("chat log encryption key is required")
+			return errors.New(resources.Get("chatlog.error.encryption_key_is_required"))
 		}
 		var sealed []byte
 		if err := tx.QueryRow(`SELECT value FROM chatlog_metadata WHERE name = 'key_check'`).Scan(&sealed); err != nil {
-			return errors.New("chat log encryption key check is missing")
+			return errors.New(resources.Get("chatlog.error.encryption_key_check_is_missing"))
 		}
 		plain, err := s.cipher.Open(sealed, []byte(keyCheck))
 		if err != nil || string(plain) != keyCheck {
-			return errors.New("chat log encryption key is incorrect or archive is damaged")
+			return errors.New(resources.Get("chatlog.error.encryption_key_is_incorrect_or_archive_is"))
 		}
 		if !hasPayload {
-			return errors.New("encrypted chat log schema is damaged")
+			return errors.New(resources.Get("chatlog.error.encrypted_chat_log_schema_is_damaged"))
 		}
 	case "plain-v1":
 		if !hasPayload {
-			return errors.New("chat log schema is damaged")
+			return errors.New(resources.Get("chatlog.error.schema_is_damaged"))
 		}
 	case "":
 		if hasPayload {
-			return errors.New("chat log format marker is missing")
+			return errors.New(resources.Get("chatlog.error.format_marker_is_missing"))
 		}
 	default:
-		return errors.New("unsupported chat log format")
+		return errors.New(resources.Get("chatlog.error.unsupported_chat_log_format"))
 	}
 	migrate := exists && (!hasPayload || mode == "plain-v1" && s.cipher != nil)
 	if migrate {
 		if err := s.migrate(tx, hasPayload); err != nil {
-			return fmt.Errorf("migrate chat log: %w", err)
+			return fmt.Errorf(resources.Get("chatlog.error.migrate_chat_log"), err)
 		}
 	} else if !exists {
 		if _, err := tx.Exec(`CREATE TABLE messages ` + messageSchema); err != nil {
@@ -192,7 +193,7 @@ func (s *Store) initialize() error {
 			return err
 		}
 		if _, err := s.db.Exec(`VACUUM`); err != nil {
-			return fmt.Errorf("compact encrypted chat log: %w", err)
+			return fmt.Errorf(resources.Get("chatlog.error.compact_encrypted_chat_log"), err)
 		}
 		if err := s.checkpoint(); err != nil {
 			return err
@@ -210,7 +211,7 @@ func (s *Store) checkpoint() error {
 		return err
 	}
 	if busy != 0 {
-		return errors.New("chat log cleanup is blocked by another database connection")
+		return errors.New(resources.Get("chatlog.error.cleanup_is_blocked_by_another_database_connection"))
 	}
 	return nil
 }
@@ -237,7 +238,7 @@ func (s *Store) migrate(tx *sql.Tx, hasPayload bool) error {
 				return err
 			}
 			if err := json.Unmarshal(plain, &msg); err != nil {
-				return errors.New("invalid plaintext chat log record")
+				return errors.New(resources.Get("chatlog.error.invalid_plaintext_chat_log_record"))
 			}
 		} else if err := rows.Scan(&msg.ID, &msg.ChatID, &msg.MessageID, &msg.UserID, &msg.Username, &msg.DisplayName, &msg.Text, &date); err != nil {
 			return err
@@ -302,11 +303,11 @@ func (s *Store) scan(rows *sql.Rows) (Message, error) {
 		var err error
 		payload, err = s.cipher.Open(payload, messageAAD(msg))
 		if err != nil {
-			return Message{}, errors.New("chat log record authentication failed")
+			return Message{}, errors.New(resources.Get("chatlog.error.record_authentication_failed"))
 		}
 	}
 	if err := json.Unmarshal(payload, &msg); err != nil {
-		return Message{}, errors.New("invalid chat log record")
+		return Message{}, errors.New(resources.Get("chatlog.error.invalid_chat_log_record"))
 	}
 	return msg, nil
 }

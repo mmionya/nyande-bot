@@ -61,7 +61,7 @@ func (b *Bot) handleGIF(session *discordgo.Session, message *discordgo.Message) 
 			var err error
 			replied, err = session.ChannelMessage(message.ChannelID, message.MessageReference.MessageID, discordgo.WithContext(ctx))
 			if err != nil {
-				log.Printf("[discord] gif reply lookup failed: %v", err)
+				log.Printf(resources.Get("discord.log.gif_reply_lookup_failed"), err)
 				_, sendErr := session.ChannelMessageSendReply(message.ChannelID, resources.Get("discord_gif_reply_failed"), message.SoftReference())
 				return sendErr
 			}
@@ -81,7 +81,7 @@ func (b *Bot) handleGIF(session *discordgo.Session, message *discordgo.Message) 
 	}
 	fail := func(text string, cause error) error {
 		b.mediaErrors.Add(1)
-		log.Printf("[discord] gif failed: %v", cause)
+		log.Printf(resources.Get("discord.log.gif_failed"), cause)
 		_, err := session.ChannelMessageEdit(message.ChannelID, status.ID, text)
 		return err
 	}
@@ -97,7 +97,7 @@ func (b *Bot) handleGIF(session *discordgo.Session, message *discordgo.Message) 
 		}
 	}
 	if target == nil {
-		return fail(resources.Get("discord_gif_no_video"), fmt.Errorf("download contained no video"))
+		return fail(resources.Get("discord_gif_no_video"), errors.New(resources.Get("discord.error.download_no_video")))
 	}
 	_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_gif_converting"))
 	data, err := convertGIF(ctx, target.Data, b.cfg.MaxFileSize)
@@ -120,7 +120,7 @@ func (b *Bot) handleGIF(session *discordgo.Session, message *discordgo.Message) 
 	return session.ChannelMessageDelete(message.ChannelID, status.ID)
 }
 
-var errGIFTooLarge = errors.New("GIF exceeds size limit")
+var errGIFTooLarge = errors.New(resources.Get("discord.error.gif_too_large"))
 
 func convertGIF(ctx context.Context, data []byte, maxSize int64) ([]byte, error) {
 	if int64(len(data)) > maxSize || maxSize <= 0 {
@@ -146,7 +146,7 @@ func convertGIF(ctx context.Context, data []byte, maxSize int64) ([]byte, error)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("ffmpeg GIF conversion: %w: %s", err, out)
+		return nil, fmt.Errorf(resources.Get("discord.error.gif_conversion"), err, out)
 	}
 	info, err := os.Stat(output)
 	if err != nil {

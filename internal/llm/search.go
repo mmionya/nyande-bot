@@ -63,7 +63,7 @@ func (c *Client) searchWebResults(ctx context.Context, query string, maximum int
 		return nil
 	}
 	for _, endpoint := range []string{"https://html.duckduckgo.com/html/", "https://lite.duckduckgo.com/lite/"} {
-		log.Printf("[search] started backend=%q", endpoint)
+		log.Printf(resources.Get("llm.log.started_backend"), endpoint)
 		form := url.Values{"q": {query}}
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 		if err != nil {
@@ -74,13 +74,13 @@ func (c *Client) searchWebResults(ctx context.Context, query string, maximum int
 		request.Header.Set("Accept-Language", "ru,en;q=0.8")
 		response, err := c.http.Do(request)
 		if err != nil {
-			log.Printf("[search] request_failed backend=%q elapsed_ms=%d", endpoint, time.Since(started).Milliseconds())
+			log.Printf(resources.Get("llm.log.request_failed_backend_elapsed_ms"), endpoint, time.Since(started).Milliseconds())
 			continue
 		}
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, 3*1024*1024))
 		response.Body.Close()
 		if readErr != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
-			log.Printf("[search] response_failed backend=%q status=%d read_error=%t", endpoint, response.StatusCode, readErr != nil)
+			log.Printf(resources.Get("llm.log.response_failed_backend_status_read_error"), endpoint, response.StatusCode, readErr != nil)
 			continue
 		}
 		results := parseSearchResults(string(body), maximum)
@@ -88,13 +88,13 @@ func (c *Client) searchWebResults(ctx context.Context, query string, maximum int
 			results = filter(results)
 		}
 		if len(results) == 0 {
-			log.Printf("[search] no_results backend=%q status=%d", endpoint, response.StatusCode)
+			log.Printf(resources.Get("llm.log.no_results_backend_status"), endpoint, response.StatusCode)
 			continue
 		}
-		log.Printf("[search] completed backend=%q results=%d elapsed_ms=%d", endpoint, len(results), time.Since(started).Milliseconds())
+		log.Printf(resources.Get("llm.log.completed_backend_results_elapsed_ms"), endpoint, len(results), time.Since(started).Milliseconds())
 		return results
 	}
-	log.Printf("[search] unavailable elapsed_ms=%d", time.Since(started).Milliseconds())
+	log.Printf(resources.Get("llm.log.unavailable_elapsed_ms"), time.Since(started).Milliseconds())
 	return nil
 }
 

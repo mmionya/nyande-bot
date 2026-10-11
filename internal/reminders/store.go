@@ -11,6 +11,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type Reminder struct {
@@ -32,16 +34,16 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil, errors.New("reminders database path is empty")
+		return nil, errors.New(resources.Get("reminders.error.database_path_is_empty"))
 	}
 	if path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, fmt.Errorf("create reminders directory: %w", err)
+			return nil, fmt.Errorf(resources.Get("reminders.error.create_reminders_directory"), err)
 		}
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("open reminders database: %w", err)
+		return nil, fmt.Errorf(resources.Get("reminders.error.open_reminders_database"), err)
 	}
 	db.SetMaxOpenConns(1)
 	store := &Store{db: db}
@@ -71,7 +73,7 @@ func (s *Store) initialize() error {
 	}
 	for _, statement := range statements {
 		if _, err := s.db.Exec(statement); err != nil {
-			return fmt.Errorf("initialize reminders database: %w", err)
+			return fmt.Errorf(resources.Get("reminders.error.initialize_reminders_database"), err)
 		}
 	}
 	return nil
@@ -87,7 +89,7 @@ func (s *Store) Close() error {
 func (s *Store) Save(ctx context.Context, r Reminder) (int64, error) {
 	text := strings.TrimSpace(r.Text)
 	if text == "" {
-		return 0, errors.New("reminder text cannot be empty")
+		return 0, errors.New(resources.Get("reminders.error.reminder_text_cannot_be_empty"))
 	}
 	triggerUnix := r.TriggerAt.UTC().Unix()
 	createdUnix := r.CreatedAt.UTC().Unix()

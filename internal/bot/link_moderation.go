@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type linkDeletionSettings struct {
@@ -72,7 +74,7 @@ func (s *linkDeletionSettings) Set(chatID int64, enabled bool) error {
 	defer s.mu.Unlock()
 
 	if _, locked := s.silentChats[chatID]; locked && !enabled {
-		return errors.New("silent moderation cannot be disabled")
+		return errors.New(resources.Get("telegram.error.silent_cannot_disable"))
 	}
 	_, wasEnabled := s.enabledChats[chatID]
 	if enabled {
@@ -167,10 +169,10 @@ func (s *linkDeletionSettings) SetUserPermission(chatID, userID int64, permitted
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, silent := s.silentChats[chatID]; !silent {
-		return errors.New("link permissions require silent moderation")
+		return errors.New(resources.Get("telegram.error.permission_requires_silent"))
 	}
 	if userID <= 0 {
-		return errors.New("link permission requires a user ID")
+		return errors.New(resources.Get("telegram.error.permission_requires_user"))
 	}
 	_, wasPermitted := s.permittedUsers[chatID][userID]
 	if wasPermitted == permitted {

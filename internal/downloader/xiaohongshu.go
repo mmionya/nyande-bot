@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const maxXiaohongshuPageSize = 8 * 1024 * 1024
@@ -50,7 +52,7 @@ func (d *Downloader) downloadXiaohongshu(ctx context.Context, value *url.URL) (R
 	if isVideoNote && len(video) > 0 {
 		videoURLs := xiaohongshuVideoURLs(note)
 		if len(videoURLs) == 0 {
-			return d.downloadXiaohongshuFallback(ctx, resolved, errors.New("Xiaohongshu returned no public video URL"))
+			return d.downloadXiaohongshuFallback(ctx, resolved, errors.New(resources.Get("downloader.error.xiaohongshu_returned_no_public_video_url")))
 		}
 		var combined error
 		for _, raw := range videoURLs {
@@ -82,7 +84,7 @@ func (d *Downloader) downloadXiaohongshu(ctx context.Context, value *url.URL) (R
 	}
 	if len(items) == 0 {
 		if combined == nil {
-			combined = errors.New("Xiaohongshu returned no downloadable media")
+			combined = errors.New(resources.Get("downloader.error.xiaohongshu_returned_no_downloadable_media"))
 		}
 		return Result{}, combined
 	}
@@ -95,7 +97,7 @@ func (d *Downloader) downloadXiaohongshuFallback(ctx context.Context, value *url
 		result.Source = "xiaohongshu"
 		return result, nil
 	}
-	return Result{}, fmt.Errorf("Xiaohongshu download failed: %w", errors.Join(nativeErr, err))
+	return Result{}, fmt.Errorf(resources.Get("downloader.error.xiaohongshu_download_failed"), errors.Join(nativeErr, err))
 }
 
 func (d *Downloader) fetchXiaohongshuPage(ctx context.Context, value *url.URL) (string, *url.URL, error) {
@@ -114,17 +116,17 @@ func (d *Downloader) fetchXiaohongshuPage(ctx context.Context, value *url.URL) (
 	defer response.Body.Close()
 	resolved := response.Request.URL
 	if !IsXiaohongshu(resolved) || hostMatches(resolved.Hostname(), "xhslink.com") {
-		return "", resolved, errors.New("Xiaohongshu link redirected outside a post page")
+		return "", resolved, errors.New(resources.Get("downloader.error.xiaohongshu_link_redirected_outside_a_post_page"))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", resolved, fmt.Errorf("Xiaohongshu page HTTP %d", response.StatusCode)
+		return "", resolved, fmt.Errorf(resources.Get("downloader.error.xiaohongshu_page_http"), response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxXiaohongshuPageSize+1))
 	if err != nil {
 		return "", resolved, err
 	}
 	if len(data) > maxXiaohongshuPageSize {
-		return "", resolved, errors.New("Xiaohongshu page is too large")
+		return "", resolved, errors.New(resources.Get("downloader.error.xiaohongshu_page_is_too_large"))
 	}
 	return string(data), resolved, nil
 }
@@ -166,7 +168,7 @@ func xiaohongshuNoteFromPage(page, noteID string) (map[string]any, error) {
 	}
 	var state map[string]any
 	if err := json.Unmarshal([]byte(replaceJavaScriptUndefined(raw)), &state); err != nil {
-		return nil, fmt.Errorf("invalid Xiaohongshu initial state: %w", err)
+		return nil, fmt.Errorf(resources.Get("downloader.error.invalid_xiaohongshu_initial_state"), err)
 	}
 	noteRoot, _ := state["note"].(map[string]any)
 	detailMap, _ := noteRoot["noteDetailMap"].(map[string]any)
@@ -183,25 +185,25 @@ func xiaohongshuNoteFromPage(page, noteID string) (map[string]any, error) {
 			return note, nil
 		}
 	}
-	return nil, errors.New("Xiaohongshu page did not contain public note data")
+	return nil, errors.New(resources.Get("downloader.error.xiaohongshu_page_did_not_contain_public_note_data"))
 }
 
 func extractAssignedJSONObject(page, variable string) (string, error) {
 	start := strings.Index(page, variable)
 	if start < 0 {
-		return "", errors.New("Xiaohongshu page did not contain initial state")
+		return "", errors.New(resources.Get("downloader.error.xiaohongshu_page_did_not_contain_initial_state"))
 	}
 	start += len(variable)
 	if equals := strings.IndexByte(page[start:], '='); equals >= 0 {
 		start += equals + 1
 	} else {
-		return "", errors.New("Xiaohongshu initial state assignment is malformed")
+		return "", errors.New(resources.Get("downloader.error.xiaohongshu_initial_state_assignment_is_malformed"))
 	}
 	for start < len(page) && (page[start] == ' ' || page[start] == '\t' || page[start] == '\r' || page[start] == '\n') {
 		start++
 	}
 	if start >= len(page) || page[start] != '{' {
-		return "", errors.New("Xiaohongshu initial state is not an object")
+		return "", errors.New(resources.Get("downloader.error.xiaohongshu_initial_state_is_not_an_object"))
 	}
 	depth := 0
 	inString := false
@@ -230,7 +232,7 @@ func extractAssignedJSONObject(page, variable string) (string, error) {
 			}
 		}
 	}
-	return "", errors.New("Xiaohongshu initial state object is incomplete")
+	return "", errors.New(resources.Get("downloader.error.xiaohongshu_initial_state_object_is_incomplete"))
 }
 
 func replaceJavaScriptUndefined(value string) string {

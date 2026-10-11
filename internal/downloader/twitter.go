@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 var twitterPathPattern = regexp.MustCompile(`(?i)^/([^/]+)/status/([0-9]+)`)
@@ -16,7 +18,7 @@ var twitterPathPattern = regexp.MustCompile(`(?i)^/([^/]+)/status/([0-9]+)`)
 func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Result, error) {
 	match := twitterPathPattern.FindStringSubmatch(value.Path)
 	if len(match) != 3 {
-		return Result{}, errors.New("unsupported Twitter/X post URL")
+		return Result{}, errors.New(resources.Get("downloader.error.unsupported_twitter_x_post_url"))
 	}
 	endpoint := fmt.Sprintf("https://api.fxtwitter.com/%s/status/%s", url.PathEscape(match[1]), match[2])
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -30,11 +32,11 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return Result{}, fmt.Errorf("FxTwitter HTTP %d", response.StatusCode)
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.fxtwitter_http"), response.StatusCode)
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return Result{}, fmt.Errorf("FxTwitter invalid JSON: %w", err)
+		return Result{}, fmt.Errorf(resources.Get("downloader.error.fxtwitter_invalid_json"), err)
 	}
 	tweet, _ := payload["tweet"].(map[string]any)
 	caption, _ := tweet["text"].(string)
@@ -68,7 +70,7 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 		}
 	}
 	if len(urls) == 0 {
-		return Result{}, errors.New("FxTwitter returned no public media")
+		return Result{}, errors.New(resources.Get("twitter.error.no_media"))
 	}
 	seen := map[string]bool{}
 	items := make([]Media, 0, len(urls))
@@ -88,7 +90,7 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 		items = append(items, item)
 	}
 	if len(items) == 0 {
-		return Result{}, errors.New("FxTwitter returned no trusted media")
+		return Result{}, errors.New(resources.Get("downloader.error.fxtwitter_returned_no_trusted_media"))
 	}
 	if author, ok := tweet["author"].(map[string]any); ok {
 		name, _ := author["name"].(string)

@@ -15,14 +15,16 @@ import (
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const MaxContentRunes = 500
 
 var (
-	ErrEmpty     = errors.New("memory is empty")
-	ErrTooLong   = errors.New("memory is too long")
-	ErrSensitive = errors.New("memory appears to contain sensitive data")
+	ErrEmpty     = errors.New(resources.Get("memory.error.is_empty"))
+	ErrTooLong   = errors.New(resources.Get("memory.error.is_too_long"))
+	ErrSensitive = errors.New(resources.Get("memory.error.appears_to_contain_sensitive_data"))
 
 	telegramTokenPattern = regexp.MustCompile(`\b[0-9]{8,12}:[A-Za-z0-9_-]{30,}\b`)
 	secretTokenPattern   = regexp.MustCompile(`(?i)\b(?:sk|rk|pk)_[a-z0-9_-]{16,}\b|\bsk-[a-z0-9_-]{16,}\b`)
@@ -47,19 +49,19 @@ type Store struct {
 func Open(path string, maxPerScope int) (*Store, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil, errors.New("memory database path is empty")
+		return nil, errors.New(resources.Get("memory.error.database_path_is_empty"))
 	}
 	if maxPerScope < 1 {
 		maxPerScope = 100
 	}
 	if path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, fmt.Errorf("create memory directory: %w", err)
+			return nil, fmt.Errorf(resources.Get("memory.error.create_memory_directory"), err)
 		}
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("open memory database: %w", err)
+		return nil, fmt.Errorf(resources.Get("memory.error.open_memory_database"), err)
 	}
 	db.SetMaxOpenConns(1)
 	store := &Store{db: db, maxPerScope: maxPerScope}
@@ -106,7 +108,7 @@ func (s *Store) initialize() error {
 	}
 	for _, statement := range statements {
 		if _, err := s.db.Exec(statement); err != nil {
-			return fmt.Errorf("initialize memory database: %w", err)
+			return fmt.Errorf(resources.Get("memory.error.initialize_memory_database"), err)
 		}
 	}
 	return nil

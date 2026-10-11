@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mmionya/nyande-bot/internal/storagecrypt"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 const historyFileVersion = 1
@@ -39,7 +40,7 @@ func (c *Client) loadHistory() error {
 	encrypted := bytes.HasPrefix(data, []byte(encryptedHistoryPrefix))
 	if encrypted {
 		if cipher == nil {
-			return errors.New("encrypted LLM history requires the storage encryption key")
+			return errors.New(resources.Get("llm.error.history_key_required"))
 		}
 		data, err = cipher.Open(data[len(encryptedHistoryPrefix):], []byte(encryptedHistoryPrefix+filepath.Base(path)))
 		if err != nil {
@@ -48,10 +49,10 @@ func (c *Client) loadHistory() error {
 	}
 	var stored persistedHistory
 	if err := json.Unmarshal(data, &stored); err != nil {
-		return fmt.Errorf("decode %s: %w", path, err)
+		return fmt.Errorf(resources.Get("llm.error.decode"), path, err)
 	}
 	if stored.Version != historyFileVersion {
-		return fmt.Errorf("unsupported history version %d", stored.Version)
+		return fmt.Errorf(resources.Get("llm.error.unsupported_history_version"), stored.Version)
 	}
 	for chatID, messages := range stored.Chats {
 		cleaned := make([]chatMessage, 0, len(messages))

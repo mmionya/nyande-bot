@@ -67,21 +67,21 @@ func New(cfg config.Config) (*Bot, error) {
 	}
 	users, err := access.Open(banPath, cfg.BotOwnerIDs)
 	if err != nil {
-		return nil, fmt.Errorf("load banned users: %w", err)
+		return nil, fmt.Errorf(resources.Get("telegram.error.load_bans"), err)
 	}
 	allowed, err := loadAllowlist(cfg.AllowedLinksFile)
 	if err != nil {
-		return nil, fmt.Errorf("load allowed links: %w", err)
+		return nil, fmt.Errorf(resources.Get("telegram.error.load_allowed_links"), err)
 	}
 	linkConfig, err := loadLinkDeletionSettings(cfg.LinkModerationFile)
 	if err != nil {
-		return nil, fmt.Errorf("load link moderation settings: %w", err)
+		return nil, fmt.Errorf(resources.Get("telegram.error.load_moderation"), err)
 	}
 	var memories *memory.Store
 	if cfg.LLMMemoryEnabled {
 		memories, err = memory.Open(cfg.LLMMemoryFile, cfg.LLMMemoryMax)
 		if err != nil {
-			return nil, fmt.Errorf("open long-term memory: %w", err)
+			return nil, fmt.Errorf(resources.Get("telegram.error.open_memory"), err)
 		}
 	}
 	var chatlogStore *chatlog.Store
@@ -91,7 +91,7 @@ func New(cfg config.Config) (*Bot, error) {
 			if memories != nil {
 				_ = memories.Close()
 			}
-			return nil, fmt.Errorf("open chat log database: %w", err)
+			return nil, fmt.Errorf(resources.Get("chatlog.error.open_chat_log_database"), err)
 		}
 	}
 	remindersStore, err := reminders.Open(cfg.ReminderDBFile)
@@ -102,7 +102,7 @@ func New(cfg config.Config) (*Bot, error) {
 		if chatlogStore != nil {
 			_ = chatlogStore.Close()
 		}
-		return nil, fmt.Errorf("open reminders database: %w", err)
+		return nil, fmt.Errorf(resources.Get("reminders.error.open_reminders_database"), err)
 	}
 	quoteStore, err := quotes.Open(cfg.QuoteDBFile)
 	if err != nil {
@@ -113,7 +113,7 @@ func New(cfg config.Config) (*Bot, error) {
 		if chatlogStore != nil {
 			_ = chatlogStore.Close()
 		}
-		return nil, fmt.Errorf("open quote database: %w", err)
+		return nil, fmt.Errorf(resources.Get("telegram.error.open_quotes"), err)
 	}
 	return &Bot{
 		cfg: cfg, access: users, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
@@ -154,37 +154,37 @@ func (b *Bot) Close() error {
 func (b *Bot) Run(ctx context.Context) error {
 	identity, err := b.telegram.GetMe(ctx)
 	if err != nil {
-		return fmt.Errorf("get bot identity: %w", err)
+		return fmt.Errorf(resources.Get("telegram.bot.error.identity"), err)
 	}
 	b.identity = identity
-	log.Printf("[bot] started as @%s (%d), %s", identity.Username, identity.ID, b.cfg.String())
+	log.Printf(resources.Get("telegram.log.started"), identity.Username, identity.ID, b.cfg.String())
 	go b.reminderLoop(ctx)
 	commands := []map[string]string{
-		{"command": "help", "description": "возможности бота"},
-		{"command": "botban", "description": "запретить доступ к боту (владелец)"},
-		{"command": "botunban", "description": "вернуть доступ к боту (владелец)"},
-		{"command": "linkdelete", "description": "удаление неподдерживаемых ссылок"},
-		{"command": "permitlinks", "description": "разрешить участнику ссылки в тихом режиме"},
-		{"command": "revokelinks", "description": "отозвать разрешение на ссылки в тихом режиме"},
-		{"command": "ttt", "description": "крестики-нолики в чате"},
-		{"command": "checkers", "description": "шашки в чате"},
-		{"command": "wordle", "description": "английское слово дня в чате"},
-		{"command": "quote", "description": "цитатник: карточка, random, list, номер, trigger"},
-		{"command": "donate", "description": "поддержать бота"},
-		{"command": "stats", "description": "статистика"},
-		{"command": "reset", "description": "очистить историю диалога"},
-		{"command": "remember", "description": "запомнить факт надолго"},
-		{"command": "memory", "description": "показать долговременную память"},
-		{"command": "forget", "description": "забыть один факт"},
-		{"command": "forget_all", "description": "очистить долговременную память"},
-		{"command": "ping", "description": "проверить бота"},
-		{"command": "round", "description": "конвертировать видео в кружочек"},
-		{"command": "voice", "description": "конвертировать в голосовое сообщение"},
-		{"command": "gif", "description": "конвертировать видео в гифку"},
-		{"command": "mediainfo", "description": "информация о фото/видео/аудио"},
+		{"command": "help", "description": resources.Get("telegram.command.help")},
+		{"command": "botban", "description": resources.Get("telegram.command.botban")},
+		{"command": "botunban", "description": resources.Get("telegram.command.botunban")},
+		{"command": "linkdelete", "description": resources.Get("telegram.command.linkdelete")},
+		{"command": "permitlinks", "description": resources.Get("telegram.command.permitlinks")},
+		{"command": "revokelinks", "description": resources.Get("telegram.command.revokelinks")},
+		{"command": "ttt", "description": resources.Get("telegram.command.ttt")},
+		{"command": "checkers", "description": resources.Get("telegram.command.checkers")},
+		{"command": "wordle", "description": resources.Get("telegram.command.wordle")},
+		{"command": "quote", "description": resources.Get("telegram.command.quote")},
+		{"command": "donate", "description": resources.Get("telegram.command.donate")},
+		{"command": "stats", "description": resources.Get("telegram.command.stats")},
+		{"command": "reset", "description": resources.Get("telegram.command.reset")},
+		{"command": "remember", "description": resources.Get("telegram.command.remember")},
+		{"command": "memory", "description": resources.Get("telegram.command.memory")},
+		{"command": "forget", "description": resources.Get("telegram.command.forget")},
+		{"command": "forget_all", "description": resources.Get("telegram.command.forget_all")},
+		{"command": "ping", "description": resources.Get("telegram.command.ping")},
+		{"command": "round", "description": resources.Get("telegram.command.round")},
+		{"command": "voice", "description": resources.Get("telegram.command.voice")},
+		{"command": "gif", "description": resources.Get("telegram.command.gif")},
+		{"command": "mediainfo", "description": resources.Get("telegram.command.mediainfo")},
 	}
 	if err := b.telegram.SetCommands(ctx, commands); err != nil {
-		log.Printf("[bot] could not set commands: %v", err)
+		log.Printf(resources.Get("telegram.log.commands_failed"), err)
 	}
 
 	var offset int64
@@ -195,7 +195,7 @@ func (b *Bot) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			log.Printf("[bot] polling failed: %v", err)
+			log.Printf(resources.Get("telegram.log.polling_failed"), err)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -211,7 +211,7 @@ func (b *Bot) Run(ctx context.Context) error {
 			go func(current telegram.Update) {
 				defer func() { <-semaphore }()
 				if err := b.HandleUpdate(ctx, current); err != nil {
-					log.Printf("[bot] update %d failed: %v", current.UpdateID, err)
+					log.Printf(resources.Get("telegram.log.update_failed"), current.UpdateID, err)
 				}
 			}(update)
 		}
@@ -276,12 +276,12 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 				return nil
 			}
 			if b.linkConfig == nil {
-				return errors.New("link deletion settings are unavailable")
+				return errors.New(resources.Get("telegram.error.link_settings_unavailable"))
 			}
 			if err := b.linkConfig.EnableSilent(message.Chat.ID); err != nil {
 				return err
 			}
-			log.Printf("[moderation] silent_enabled platform=telegram chat=%d user=%d msg=%d", message.Chat.ID, userID(message), message.MessageID)
+			log.Printf(resources.Get("telegram.log.silent_enabled"), message.Chat.ID, userID(message), message.MessageID)
 			return nil
 		}
 	}
@@ -291,7 +291,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 
 	if payment := message.SuccessfulPayment; payment != nil {
 		if strings.HasPrefix(payment.InvoicePayload, "nyande_donation:") {
-			log.Printf("[payments] stars received user=%d amount=%d charge=%s", userID(message), payment.TotalAmount, payment.TelegramPaymentChargeID)
+			log.Printf(resources.Get("telegram.log.stars_received"), userID(message), payment.TotalAmount, payment.TelegramPaymentChargeID)
 			_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
 				resources.Format("bot.payment.thanks", map[string]any{"stars": payment.TotalAmount}),
 				message.MessageID, nil)
@@ -306,9 +306,9 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			return nil
 		}
 		started := time.Now()
-		log.Printf("[command] started platform=telegram chat=%d user=%d msg=%d command=%q", message.Chat.ID, userID(message), message.MessageID, command)
+		log.Printf(resources.Get("telegram.log.command_started"), message.Chat.ID, userID(message), message.MessageID, command)
 		defer func() {
-			log.Printf("[command] finished platform=telegram chat=%d user=%d msg=%d command=%q failed=%t elapsed_ms=%d", message.Chat.ID, userID(message), message.MessageID, command, err != nil, time.Since(started).Milliseconds())
+			log.Printf(resources.Get("telegram.log.command_finished"), message.Chat.ID, userID(message), message.MessageID, command, err != nil, time.Since(started).Milliseconds())
 		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
@@ -367,7 +367,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		case "mediainfo":
 			return b.mediainfoCommand(ctx, message)
 		default:
-			log.Printf("[command] unknown platform=telegram chat=%d msg=%d command=%q", message.Chat.ID, message.MessageID, command)
+			log.Printf(resources.Get("telegram.log.command_unknown"), message.Chat.ID, message.MessageID, command)
 			return nil
 		}
 	}
@@ -431,7 +431,7 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 		var err error
 		admin, err = b.isAdmin(ctx, message)
 		if err != nil {
-			return fmt.Errorf("check link author role: %w", err)
+			return fmt.Errorf(resources.Get("telegram.error.link_author_role"), err)
 		}
 	}
 	if forbidden && !message.IsPrivate() && !admin && b.linkDeletionEnabled(message.Chat.ID) {
@@ -608,7 +608,7 @@ func (b *Bot) saveChatMessage(ctx context.Context, message *telegram.Message) {
 		Text:        text,
 		Date:        date,
 	}); err != nil {
-		log.Printf("[chatlog] save chat=%d msg=%d failed: %v", message.Chat.ID, message.MessageID, err)
+		log.Printf(resources.Get("telegram.log.chatlog_save_failed"), message.Chat.ID, message.MessageID, err)
 	}
 }
 
@@ -625,7 +625,7 @@ func (b *Bot) reminderLoop(ctx context.Context) {
 		case now := <-ticker.C:
 			due, err := b.reminders.GetDue(ctx, now)
 			if err != nil {
-				log.Printf("[reminders] get due failed: %v", err)
+				log.Printf(resources.Get("telegram.log.reminders_due_failed"), err)
 				continue
 			}
 			for _, r := range due {
@@ -648,18 +648,18 @@ func (b *Bot) deliverReminder(ctx context.Context, r reminders.Reminder) {
 	defer unlock()
 	if b.silentModeration(r.ChatID) || b.access.IsBanned(strconv.FormatInt(r.UserID, 10)) {
 		if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
-			log.Printf("[reminders] discard blocked reminder %d: %v", r.ID, err)
+			log.Printf(resources.Get("telegram.log.reminder_discard_failed"), r.ID, err)
 		}
 		return
 	}
 	userTag := r.UserName
 	if userTag == "" {
-		userTag = "друг"
+		userTag = resources.Get("telegram.reminder.default_user")
 	}
-	text := fmt.Sprintf("⏰ **Напоминание для %s**:\n%s", userTag, r.Text)
+	text := fmt.Sprintf(resources.Get("telegram.reminder.message"), userTag, r.Text)
 	_, sendErr := b.telegram.SendMessage(ctx, r.ChatID, text, r.MessageID, nil)
 	if sendErr != nil {
-		log.Printf("[reminders] send reminder %d failed: %v", r.ID, sendErr)
+		log.Printf(resources.Get("telegram.log.reminder_send_failed"), r.ID, sendErr)
 		errText := strings.ToLower(sendErr.Error())
 		isPermanent := strings.Contains(errText, "kicked") ||
 			strings.Contains(errText, "blocked") ||
@@ -672,7 +672,7 @@ func (b *Bot) deliverReminder(ctx context.Context, r reminders.Reminder) {
 		}
 	}
 	if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
-		log.Printf("[reminders] mark completed %d failed: %v", r.ID, err)
+		log.Printf(resources.Get("telegram.log.reminder_complete_failed"), r.ID, err)
 	}
 }
 

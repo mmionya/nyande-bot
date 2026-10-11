@@ -16,6 +16,7 @@ import (
 
 	"github.com/disgoorg/disgolink/v4/lavalink"
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/resources"
 	"golang.org/x/net/html"
 )
 
@@ -37,7 +38,7 @@ func newMusicExtractor(cfg config.Config) (*musicExtractor, error) {
 	}
 	for _, path := range []string{cfg.YTDownloadPath, cfg.FFmpegPath} {
 		if _, err := exec.LookPath(path); err != nil {
-			return nil, fmt.Errorf("music executable %s: %w", path, err)
+			return nil, fmt.Errorf(resources.Get("music.error.executable"), path, err)
 		}
 	}
 	return &musicExtractor{cfg: cfg, gate: make(chan struct{}, 1), client: &http.Client{Timeout: 20 * time.Second}, command: exec.CommandContext}, nil
@@ -54,7 +55,7 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if len(p) > b.limit-len(b.data) {
-		return 0, errors.New("music process output limit exceeded")
+		return 0, errors.New(resources.Get("music.error.output_limit"))
 	}
 	b.data = append(b.data, p...)
 	return len(p), nil
@@ -87,7 +88,7 @@ func (e *musicExtractor) run(ctx context.Context, args ...string) ([]byte, error
 	cmd.Stdout = out
 	cmd.Stderr = diagnostic
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("yt-dlp: %w (check source availability and yt-dlp version)", err)
+		return nil, fmt.Errorf(resources.Get("music.error.ytdlp"), err)
 	}
 	return out.Bytes(), nil
 }
@@ -120,7 +121,7 @@ func musicSearchTargetLimit(identifier string, limit int) (string, string, error
 	}
 	prefix, query, ok := strings.Cut(identifier, ":")
 	if !ok || strings.TrimSpace(query) == "" {
-		return "", "", errors.New("invalid search")
+		return "", "", errors.New(resources.Get("music.error.invalid_search"))
 	}
 	switch prefix {
 	case "ytsearch":
@@ -132,7 +133,7 @@ func musicSearchTargetLimit(identifier string, limit int) (string, string, error
 	case "bcsearch":
 		return "https://bandcamp.com/search?item_type=t&q=" + url.QueryEscape(query), "bandcamp", nil
 	default:
-		return "", "", errors.New("unsupported search")
+		return "", "", errors.New(resources.Get("music.error.unsupported_search"))
 	}
 }
 func (e *musicExtractor) load(ctx context.Context, identifier string) ([]lavalink.Track, error) {
@@ -228,11 +229,11 @@ type musicStream struct {
 
 func (e *musicExtractor) resolve(ctx context.Context, track lavalink.Track) (musicStream, error) {
 	if track.Info.URI == nil {
-		return musicStream{}, errors.New("track has no source URL")
+		return musicStream{}, errors.New(resources.Get("music.error.missing_source_url"))
 	}
 	page, err := musicIdentifier(*track.Info.URI)
 	if err != nil || !strings.HasPrefix(page, "https://") {
-		return musicStream{}, errors.New("invalid track URL")
+		return musicStream{}, errors.New(resources.Get("music.error.invalid_track_url"))
 	}
 	if err = e.acquire(ctx); err != nil {
 		return musicStream{}, err
@@ -248,7 +249,7 @@ func (e *musicExtractor) resolve(ctx context.Context, track lavalink.Track) (mus
 	}
 	u, err := url.Parse(info.URL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil {
-		return musicStream{}, errors.New("extractor did not return an HTTP audio stream")
+		return musicStream{}, errors.New(resources.Get("music.error.missing_audio_stream"))
 	}
 	return musicStream{URL: info.URL, Headers: info.Headers}, nil
 }
@@ -297,17 +298,17 @@ func (e *musicExtractor) bandcamp(ctx context.Context, target string) ([]lavalin
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Bandcamp search HTTP %d", res.StatusCode)
+		return nil, fmt.Errorf(resources.Get("music.error.bandcamp_status"), res.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(res.Body, (1<<20)+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > 1<<20 {
-		return nil, errors.New("Bandcamp search page too large")
+		return nil, errors.New(resources.Get("music.error.bandcamp_page_too_large"))
 	}
 	if bytes.Contains(data, []byte("Client Challenge")) {
-		return nil, errors.New("Bandcamp requires a browser challenge")
+		return nil, errors.New(resources.Get("music.error.bandcamp_challenge"))
 	}
 	return parseBandcampSearch(data)
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/access"
 	"github.com/mmionya/nyande-bot/internal/storagecrypt"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type Config struct {
@@ -77,7 +78,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	if err := loadDotEnv(".env"); err != nil {
-		return Config{}, fmt.Errorf("load .env: %w", err)
+		return Config{}, fmt.Errorf(resources.Get("config.error.load_env"), err)
 	}
 	cfg := Config{
 		BotToken:               firstEnv("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
@@ -139,10 +140,10 @@ func Load() (Config, error) {
 		QuoteDBFile:            envString("QUOTE_DB_FILE", ".nyande-quotes.db"),
 	}
 	if cfg.BotToken == "" && cfg.DiscordToken == "" {
-		return Config{}, errors.New("BOT_TOKEN or DISCORD_BOT_TOKEN is required")
+		return Config{}, errors.New(resources.Get("config.error.bot_token_or_discord_bot_token_is_required"))
 	}
 	if cfg.LLMEnabled && (cfg.LLMAPIKey == "" || cfg.LLMModel == "") {
-		return Config{}, errors.New("LLM_ENABLED requires LLM_API_KEY and LLM_MODEL")
+		return Config{}, errors.New(resources.Get("config.error.llm_enabled_requires_llm_api_key_and_llm_model"))
 	}
 	for name, ids := range map[string][]string{"BOT_OWNER_IDS": cfg.BotOwnerIDs, "DISCORD_OWNER_IDS": cfg.DiscordOwnerIDs} {
 		for _, id := range ids {
@@ -154,7 +155,7 @@ func Load() (Config, error) {
 	if path := strings.TrimSpace(os.Getenv("DATA_ENCRYPTION_KEY_FILE")); path != "" {
 		key, err := storagecrypt.ReadKeyFile(path)
 		if err != nil {
-			return Config{}, fmt.Errorf("load DATA_ENCRYPTION_KEY_FILE: %w", err)
+			return Config{}, fmt.Errorf(resources.Get("config.error.load_data_encryption_key_file"), err)
 		}
 		cfg.StorageEncryptionKey = key
 	}
@@ -303,5 +304,5 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 }
 
 func (c Config) String() string {
-	return fmt.Sprintf("telegram=%t discord=%t llm=%t model=%q memory=%t chatlog=%t web_search=%t vision=%t whisper=%t", c.BotToken != "", c.DiscordToken != "", c.LLMEnabled, c.LLMModel, c.LLMMemoryEnabled, c.ChatLogEnabled, c.LLMWebSearch, c.LLMVision, c.WhisperEnabled)
+	return fmt.Sprintf(resources.Get("config.log.summary"), c.BotToken != "", c.DiscordToken != "", c.LLMEnabled, c.LLMModel, c.LLMMemoryEnabled, c.ChatLogEnabled, c.LLMWebSearch, c.LLMVision, c.WhisperEnabled)
 }

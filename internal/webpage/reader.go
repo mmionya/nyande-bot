@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 type Page struct {
@@ -62,7 +64,7 @@ func checkPublicAddress(_ string, address string, _ syscall.RawConn) error {
 	endpoint, err := netip.ParseAddrPort(address)
 	ip := endpoint.Addr().Unmap()
 	if err != nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || sharedAddressSpace.Contains(ip) {
-		return errors.New("webpage address must be public")
+		return errors.New(resources.Get("webpage.error.webpage_address_must_be_public"))
 	}
 	return nil
 }
@@ -70,14 +72,14 @@ func checkPublicAddress(_ string, address string, _ syscall.RawConn) error {
 func Fetch(ctx context.Context, rawURL string, maxRunes int) (Page, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return Page{}, errors.New("empty URL")
+		return Page{}, errors.New(resources.Get("webpage.error.empty_url"))
 	}
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = "https://" + rawURL
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Host == "" {
-		return Page{}, fmt.Errorf("invalid URL: %s", rawURL)
+		return Page{}, fmt.Errorf(resources.Get("webpage.error.invalid_url"), rawURL)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -89,18 +91,18 @@ func Fetch(ctx context.Context, rawURL string, maxRunes int) (Page, error) {
 
 	response, err := defaultClient.Do(request)
 	if err != nil {
-		return Page{}, fmt.Errorf("fetch %s failed: %w", rawURL, err)
+		return Page{}, fmt.Errorf(resources.Get("webpage.error.fetch_failed"), rawURL, err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return Page{}, fmt.Errorf("HTTP error %d (%s)", response.StatusCode, response.Status)
+		return Page{}, fmt.Errorf(resources.Get("webpage.error.http_error"), response.StatusCode, response.Status)
 	}
 
 	// Limit read size to 2 MB
 	bodyBytes, err := io.ReadAll(io.LimitReader(response.Body, 2*1024*1024))
 	if err != nil {
-		return Page{}, fmt.Errorf("read response body: %w", err)
+		return Page{}, fmt.Errorf(resources.Get("webpage.error.read_response_body"), err)
 	}
 
 	rawHTML := string(bodyBytes)
@@ -119,7 +121,7 @@ func Fetch(ctx context.Context, rawURL string, maxRunes int) (Page, error) {
 	}
 
 	if cleanText == "" {
-		cleanText = "Страница не содержит текстового контента."
+		cleanText = resources.Get("webpage.empty_content")
 	}
 
 	return Page{

@@ -7,13 +7,14 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/mmionya/nyande-bot/internal/access"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func (b *Bot) botBanCommand(session *discordgo.Session, message *discordgo.Message, banned bool) string {
 	if message.Author == nil || !b.access.IsOwner(message.Author.ID) {
-		return "Эта команда доступна только владельцу бота."
+		return resources.Get("access.owner_only")
 	}
-	usage := fmt.Sprintf("Укажи ID или @упоминание пользователя, либо ответь на его сообщение: %sbotban / %sbotunban.", b.cfg.DiscordPrefix, b.cfg.DiscordPrefix)
+	usage := fmt.Sprintf(resources.Get("discord.access.usage"), b.cfg.DiscordPrefix, b.cfg.DiscordPrefix)
 	if len(message.MessageSnapshots) != 0 || message.MessageReference != nil && message.MessageReference.Type == discordgo.MessageReferenceTypeForward {
 		return usage
 	}
@@ -45,14 +46,14 @@ func (b *Bot) botBanCommand(session *discordgo.Session, message *discordgo.Messa
 		return usage
 	}
 	if b.access.IsOwner(id) || session.State != nil && session.State.User != nil && session.State.User.ID == id {
-		return "Нельзя заблокировать владельца или самого бота."
+		return resources.Get("access.protected")
 	}
 	if err := b.access.SetBanned(id, banned); err != nil {
-		log.Printf("[discord] could not save ban user=%s: %v", id, err)
-		return "Не удалось сохранить изменение доступа. Попробуй ещё раз."
+		log.Printf(resources.Get("discord.log.ban_save_failed"), id, err)
+		return resources.Get("discord.access.save_failed")
 	}
 	if banned {
-		return fmt.Sprintf("Пользователь %s заблокирован для этого бота во всех чатах Discord.", id)
+		return fmt.Sprintf(resources.Get("discord.access.banned"), id)
 	}
-	return fmt.Sprintf("Доступ пользователя %s к боту восстановлен.", id)
+	return fmt.Sprintf(resources.Get("discord.access.unbanned"), id)
 }

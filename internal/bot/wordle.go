@@ -178,7 +178,7 @@ func (b *Bot) sendWordleCard(ctx context.Context, message *telegram.Message, gam
 	}
 	data, err := renderWordleCard(game, avatar)
 	if err != nil {
-		return fmt.Errorf("render wordle card: %w", err)
+		return fmt.Errorf(resources.Get("telegram.error.wordle_render"), err)
 	}
 	_, err = b.telegram.SendUpload(ctx, message.Chat.ID, telegram.Upload{
 		Kind: "photo", Name: fmt.Sprintf("wordle-%d.png", game.Number),
@@ -272,7 +272,7 @@ func renderWordleCard(game wordleGame, avatar image.Image) ([]byte, error) {
 	drawRoundedRect(canvas, image.Rect(150, 128, 874, 516), 34, wordleBorder)
 	drawRoundedRect(canvas, image.Rect(154, 132, 870, 512), 30, wordlePanel)
 
-	heading := fmt.Sprintf("WORDLE NO. %d", game.Number)
+	heading := fmt.Sprintf(resources.Get("telegram.wordle.card_title"), game.Number)
 	drawBitmapText(canvas, (1024-bitmapTextWidth(heading, 7))/2, 48, heading, 7, wordleWhite)
 
 	boardX := 366

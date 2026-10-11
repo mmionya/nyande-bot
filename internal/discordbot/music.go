@@ -18,6 +18,7 @@ import (
 	"github.com/disgoorg/disgolink/v4/disgolink"
 	"github.com/disgoorg/disgolink/v4/lavalink"
 	"github.com/disgoorg/snowflake/v2"
+
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -82,16 +83,16 @@ func (m *musicService) close() {
 func musicIdentifier(query string) (string, error) {
 	query = strings.TrimSpace(query)
 	if query == "" || len(query) > 500 {
-		return "", errors.New("invalid query")
+		return "", errors.New(resources.Get("music.error.invalid_query"))
 	}
 	if strings.Contains(query, "://") {
 		u, err := url.Parse(query)
 		if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
-			return "", errors.New("invalid URL")
+			return "", errors.New(resources.Get("music.error.invalid_url"))
 		}
 		host := strings.ToLower(u.Hostname())
 		if host != "youtu.be" && host != "youtube.com" && !strings.HasSuffix(host, ".youtube.com") && host != "soundcloud.com" && !strings.HasSuffix(host, ".soundcloud.com") && host != "bandcamp.com" && !strings.HasSuffix(host, ".bandcamp.com") {
-			return "", errors.New("unsupported music host")
+			return "", errors.New(resources.Get("music.error.unsupported_host"))
 		}
 		return u.String(), nil
 	}
@@ -103,7 +104,7 @@ func musicIdentifier(query string) (string, error) {
 		if prefix, exists := prefixes[strings.ToLower(source)]; exists {
 			text = strings.TrimSpace(text)
 			if text == "" {
-				return "", errors.New("empty music search query")
+				return "", errors.New(resources.Get("music.error.empty_query"))
 			}
 			return prefix + text, nil
 		}
@@ -118,10 +119,10 @@ func (b *Bot) getMusic(session *discordgo.Session) (*musicService, error) {
 		return b.music, nil
 	}
 	if b.cfg.MusicBackend == "lavalink" && b.cfg.LavalinkAddress == "" {
-		return nil, errors.New("music is not configured")
+		return nil, errors.New(resources.Get("music.error.not_configured"))
 	}
 	if session.State == nil || session.State.User == nil {
-		return nil, errors.New("Discord identity is not ready")
+		return nil, errors.New(resources.Get("music.error.identity_not_ready"))
 	}
 	id, err := snowflake.Parse(session.State.User.ID)
 	if err != nil {
@@ -131,7 +132,7 @@ func (b *Bot) getMusic(session *discordgo.Session) (*musicService, error) {
 	m.notify = func(channel, text string) {
 		_, err := session.ChannelMessageSendComplex(channel, &discordgo.MessageSend{Content: truncateMessage(text, 2000), AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}})
 		if err != nil {
-			log.Printf("[music] notification failed: %v", err)
+			log.Printf(resources.Get("music.log.notification_failed"), err)
 		}
 	}
 	if b.cfg.MusicBackend == "" || b.cfg.MusicBackend == "direct" {
@@ -144,7 +145,7 @@ func (b *Bot) getMusic(session *discordgo.Session) (*musicService, error) {
 		return m, nil
 	}
 	if b.cfg.MusicBackend != "lavalink" {
-		return nil, errors.New("unknown DISCORD_MUSIC_BACKEND")
+		return nil, errors.New(resources.Get("music.error.unknown_backend"))
 	}
 	ready := make(chan struct{})
 	var readyOnce sync.Once
@@ -198,7 +199,7 @@ func (b *Bot) musicCommand(session *discordgo.Session, message *discordgo.Messag
 	}
 	m, err := b.getMusic(session)
 	if err != nil {
-		log.Printf("[music] unavailable: %v", err)
+		log.Printf(resources.Get("music.log.unavailable"), err)
 		return resources.Get("music.unavailable")
 	}
 	fields := strings.Fields(message.Content)
@@ -212,7 +213,7 @@ func (b *Bot) musicCommand(session *discordgo.Session, message *discordgo.Messag
 		}
 		tracks, err := m.backend.load(ctx, identifier)
 		if err != nil {
-			log.Printf("[music] search failed: %v", err)
+			log.Printf(resources.Get("music.log.search_failed"), err)
 			return resources.Get("music.failed")
 		}
 		if len(tracks) == 0 {
@@ -229,7 +230,7 @@ func (b *Bot) musicCommand(session *discordgo.Session, message *discordgo.Messag
 		m.searchesMu.Unlock()
 		var text strings.Builder
 		for i, track := range tracks {
-			fmt.Fprintf(&text, "%d. %s\n", i+1, musicTitle(track))
+			fmt.Fprintf(&text, resources.Get("music.search.track_line"), i+1, musicTitle(track))
 		}
 		text.WriteString(resources.Format("music.choose", map[string]any{"prefix": b.cfg.DiscordPrefix}))
 		return truncateMessage(text.String(), 1900)
@@ -243,7 +244,7 @@ func (b *Bot) musicCommand(session *discordgo.Session, message *discordgo.Messag
 		}
 		text := resources.Format("music.current", map[string]any{"title": musicTitle(*g.current)})
 		for i, track := range g.queue {
-			text += fmt.Sprintf("\n%d. %s", i+1, musicTitle(track))
+			text += fmt.Sprintf(resources.Get("music.queue.track_line"), i+1, musicTitle(track))
 		}
 		return truncateMessage(text, 1900)
 	}
@@ -274,7 +275,7 @@ func (b *Bot) musicCommand(session *discordgo.Session, message *discordgo.Messag
 				tracks, err = m.backend.load(ctx, identifier)
 			}
 			if err != nil {
-				log.Printf("[music] load failed: %v", err)
+				log.Printf(resources.Get("music.log.load_failed"), err)
 				return resources.Get("music.failed")
 			}
 			if len(tracks) == 0 {
@@ -356,7 +357,7 @@ func (b *Bot) musicCommand(session *discordgo.Session, message *discordgo.Messag
 		err = m.stopLocked(ctx, message.GuildID, g)
 	}
 	if err != nil {
-		log.Printf("[music] %s failed: %v", command, err)
+		log.Printf(resources.Get("music.log.command_failed"), command, err)
 		return resources.Get("music.failed")
 	}
 	if command == "volume" || command == "volup" || command == "voldown" {
@@ -409,7 +410,7 @@ func (b *Bot) enqueueMusicTracks(ctx context.Context, session *discordgo.Session
 			if errors.Is(err, errMusicPlayerLimit) {
 				return resources.Get("music.player_limit"), false
 			}
-			log.Printf("[music] join failed: %v", err)
+			log.Printf(resources.Get("music.log.join_failed"), err)
 			return resources.Get("music.failed"), false
 		}
 		g.channel = voice.ChannelID
@@ -418,7 +419,7 @@ func (b *Bot) enqueueMusicTracks(ctx context.Context, session *discordgo.Session
 	text := resources.Format("music.queued", map[string]any{"title": musicTitle(tracks[0])})
 	if g.current == nil {
 		if err := m.startLocked(ctx, message.GuildID, g, tracks[0]); err != nil {
-			log.Printf("[music] play failed: %v", err)
+			log.Printf(resources.Get("music.log.play_failed"), err)
 			_ = m.stopLocked(ctx, message.GuildID, g)
 			return resources.Get("music.failed"), false
 		}
@@ -455,7 +456,7 @@ func musicPosition(g *musicGuild, now time.Time) lavalink.Duration {
 func musicTitle(track lavalink.Track) string {
 	title := strings.TrimSpace(track.Info.Title)
 	if title == "" {
-		title = "Без названия"
+		title = resources.Get("music.untitled")
 	}
 	return truncateMessage(strings.ReplaceAll(strings.ReplaceAll(title, "\n", " "), "@", "＠"), 100)
 }
@@ -521,7 +522,7 @@ func (m *musicService) trackEnded(id string, track lavalink.Track, failed bool) 
 		err = m.nextLocked(ctx, id, g)
 	}
 	if err != nil {
-		log.Printf("[music] advance failed guild=%s: %v", id, err)
+		log.Printf(resources.Get("music.log.advance_failed"), id, err)
 		_ = m.stopLocked(ctx, id, g)
 		m.notify(g.textChannel, resources.Get("music.failed"))
 	}
@@ -602,7 +603,7 @@ func (m *musicService) updateVoiceLocked(ctx context.Context, id string, g *musi
 		return
 	}
 	if err := m.backend.update(ctx, id, disgolink.WithVoice(g.voice)); err != nil {
-		log.Printf("[music] voice update failed guild=%s: %v", id, err)
+		log.Printf(resources.Get("music.log.voice_update_failed"), id, err)
 		_ = m.stopLocked(ctx, id, g)
 		m.notify(g.textChannel, resources.Get("music.failed"))
 	}

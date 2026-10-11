@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 // oggOpusReader reconstructs packets across page boundaries. FFmpeg is required
@@ -39,15 +41,15 @@ func (r *oggOpusReader) next() ([]byte, error) {
 				return nil, err
 			}
 			if string(header[:4]) != "OggS" || header[4] != 0 {
-				return nil, errors.New("invalid Ogg page")
+				return nil, errors.New(resources.Get("music.error.invalid_ogg_page"))
 			}
 			serial := binary.LittleEndian.Uint32(header[14:18])
 			sequence := binary.LittleEndian.Uint32(header[18:22])
 			if r.started && (serial != r.serial || sequence != r.sequence+1) {
-				return nil, errors.New("discontinuous Ogg stream")
+				return nil, errors.New(resources.Get("music.error.discontinuous_ogg_stream"))
 			}
 			if (header[5]&1 != 0) != (len(r.partial) > 0) {
-				return nil, errors.New("invalid Ogg packet continuation")
+				return nil, errors.New(resources.Get("music.error.invalid_ogg_continuation"))
 			}
 			r.started = true
 			r.serial = serial
@@ -69,7 +71,7 @@ func (r *oggOpusReader) next() ([]byte, error) {
 			n := int(r.lacing[0])
 			r.lacing = r.lacing[1:]
 			if len(r.partial)+n > 64<<10 {
-				return nil, errors.New("oversized Opus packet")
+				return nil, errors.New(resources.Get("music.error.opus_packet_too_large"))
 			}
 			r.partial = append(r.partial, r.body[:n]...)
 			r.body = r.body[n:]
@@ -80,20 +82,20 @@ func (r *oggOpusReader) next() ([]byte, error) {
 			r.partial = nil
 			if r.headers == 0 {
 				if len(packet) < 19 || !bytes.HasPrefix(packet, []byte("OpusHead")) || packet[9] != 2 {
-					return nil, errors.New("expected stereo Opus header")
+					return nil, errors.New(resources.Get("music.error.expected_stereo_opus"))
 				}
 				r.headers++
 				continue
 			}
 			if r.headers == 1 {
 				if !bytes.HasPrefix(packet, []byte("OpusTags")) {
-					return nil, errors.New("missing Opus tags")
+					return nil, errors.New(resources.Get("music.error.missing_opus_tags"))
 				}
 				r.headers++
 				continue
 			}
 			if len(packet) == 0 || len(packet) > 1275 {
-				return nil, errors.New("invalid 20 ms Opus frame")
+				return nil, errors.New(resources.Get("music.error.invalid_opus_frame"))
 			}
 			return packet, nil
 		}

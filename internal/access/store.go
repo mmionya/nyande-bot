@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 // ponytail: bans gate new work; add per-user cancellation if in-flight work must stop too.
@@ -24,20 +26,20 @@ type Store struct {
 func ParseUserID(raw string) (string, error) {
 	id, err := strconv.ParseUint(raw, 10, 64)
 	if err != nil || id == 0 || strconv.FormatUint(id, 10) != raw {
-		return "", errors.New("user ID must be a positive decimal number without signs or leading zeros")
+		return "", errors.New(resources.Get("access.error.user_id_must_be_a_positive_decimal_number_without"))
 	}
 	return raw, nil
 }
 
 func Open(path string, owners []string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("banned users file path is empty")
+		return nil, errors.New(resources.Get("access.error.banned_users_file_path_is_empty"))
 	}
 	s := &Store{path: path, owners: make(map[string]bool), banned: make(map[string]bool)}
 	for _, raw := range owners {
 		id, err := ParseUserID(raw)
 		if err != nil {
-			return nil, fmt.Errorf("invalid bot owner ID %q: %w", raw, err)
+			return nil, fmt.Errorf(resources.Get("access.error.invalid_bot_owner_id"), raw, err)
 		}
 		s.owners[id] = true
 	}
@@ -50,15 +52,15 @@ func Open(path string, owners []string) (*Store, error) {
 	}
 	var ids []string
 	if err := json.Unmarshal(data, &ids); err != nil {
-		return nil, fmt.Errorf("decode banned users: %w", err)
+		return nil, fmt.Errorf(resources.Get("access.error.decode_banned_users"), err)
 	}
 	if ids == nil {
-		return nil, errors.New("banned users file must contain a JSON array of user IDs")
+		return nil, errors.New(resources.Get("access.error.banned_users_file_must_contain_a_json_array_of"))
 	}
 	for _, raw := range ids {
 		id, err := ParseUserID(raw)
 		if err != nil {
-			return nil, fmt.Errorf("invalid banned user ID %q: %w", raw, err)
+			return nil, fmt.Errorf(resources.Get("access.error.invalid_banned_user_id"), raw, err)
 		}
 		if !s.IsOwner(id) {
 			s.banned[id] = true
@@ -83,10 +85,10 @@ func (s *Store) SetBanned(id string, banned bool) error {
 		return err
 	}
 	if s == nil {
-		return errors.New("banned users store is unavailable")
+		return errors.New(resources.Get("access.error.banned_users_store_is_unavailable"))
 	}
 	if banned && s.IsOwner(id) {
-		return errors.New("cannot ban a bot owner")
+		return errors.New(resources.Get("access.error.cannot_ban_a_bot_owner"))
 	}
 	// ponytail: serialize whole-file writes; move to SQLite if ban lists or writes become large.
 	s.mu.Lock()

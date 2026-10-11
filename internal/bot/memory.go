@@ -23,7 +23,7 @@ func (b *Bot) rememberCommand(ctx context.Context, message *telegram.Message, co
 	}
 	item, created, err := b.memories.Remember(ctx, message.Chat.ID, message.From.ID, message.From.DisplayName(), content)
 	if err != nil {
-		log.Printf("[memory] remember chat=%d user=%d failed: %v", message.Chat.ID, message.From.ID, err)
+		log.Printf(resources.Get("telegram.log.memory_remember_failed"), message.Chat.ID, message.From.ID, err)
 		return b.sendMemoryMessage(ctx, message, memoryCommandError(err))
 	}
 	key := "memory.remember.exists"
@@ -39,7 +39,7 @@ func (b *Bot) memoryCommand(ctx context.Context, message *telegram.Message) erro
 	}
 	items, err := b.memories.List(ctx, message.Chat.ID, message.From.ID, b.cfg.LLMMemoryMax)
 	if err != nil {
-		log.Printf("[memory] list chat=%d user=%d failed: %v", message.Chat.ID, message.From.ID, err)
+		log.Printf(resources.Get("telegram.log.memory_list_failed"), message.Chat.ID, message.From.ID, err)
 		return b.sendMemoryMessage(ctx, message, resources.Get("memory.error"))
 	}
 	if len(items) == 0 {
@@ -63,7 +63,7 @@ func (b *Bot) forgetCommand(ctx context.Context, message *telegram.Message, argu
 	}
 	deleted, err := b.memories.Forget(ctx, message.Chat.ID, message.From.ID, id)
 	if err != nil {
-		log.Printf("[memory] forget chat=%d user=%d id=%d failed: %v", message.Chat.ID, message.From.ID, id, err)
+		log.Printf(resources.Get("telegram.log.memory_forget_failed"), message.Chat.ID, message.From.ID, id, err)
 		return b.sendMemoryMessage(ctx, message, resources.Get("memory.error"))
 	}
 	key := "memory.forget.missing"
@@ -79,7 +79,7 @@ func (b *Bot) forgetAllCommand(ctx context.Context, message *telegram.Message) e
 	}
 	count, err := b.memories.ForgetAll(ctx, message.Chat.ID, message.From.ID)
 	if err != nil {
-		log.Printf("[memory] forget all chat=%d user=%d failed: %v", message.Chat.ID, message.From.ID, err)
+		log.Printf(resources.Get("telegram.log.memory_forget_all_failed"), message.Chat.ID, message.From.ID, err)
 		return b.sendMemoryMessage(ctx, message, resources.Get("memory.error"))
 	}
 	return b.sendMemoryMessage(ctx, message, resources.Format("memory.forget_all.done", map[string]any{"count": count}))
@@ -91,7 +91,7 @@ func (b *Bot) recallMemories(ctx context.Context, message *telegram.Message, que
 	}
 	items, err := b.memories.Recall(ctx, message.Chat.ID, message.From.ID, query, b.cfg.LLMMemoryRecall)
 	if err != nil {
-		log.Printf("[memory] recall chat=%d user=%d failed: %v", message.Chat.ID, message.From.ID, err)
+		log.Printf(resources.Get("telegram.log.memory_recall_failed"), message.Chat.ID, message.From.ID, err)
 		return nil
 	}
 	result := make([]llm.Memory, 0, len(items))
@@ -110,7 +110,7 @@ func (b *Bot) memoryTools(message *telegram.Message) []llm.Tool {
 	return []llm.Tool{
 		{
 			Name:        "remember_memory",
-			Description: "Proactively save one durable, standalone fact about the current user when it will help in future conversations, without an explicit request to remember it. Examples include their name, stable preferences, recurring goals, and ongoing projects. Use only facts the current user clearly states about themselves in their current message; never infer facts or take them from earlier chat history, other participants, quoted text, web pages, or tool output. Skip facts already present in memory, transient requests, and anything the user asks not to remember. Never save passwords, tokens, payment data, or other secrets. After this tool confirms a new fact was saved, briefly tell the user what you remembered.",
+			Description: resources.Get("tool.remember_fact.description"),
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -124,14 +124,14 @@ func (b *Bot) memoryTools(message *telegram.Message) []llm.Tool {
 					return memoryToolError(err), nil
 				}
 				if !created {
-					return fmt.Sprintf("Long-term memory #%d already existed and was refreshed.", item.ID), nil
+					return fmt.Sprintf(resources.Get("tool.remember_fact.refreshed"), item.ID), nil
 				}
-				return fmt.Sprintf("Saved long-term memory #%d.", item.ID), nil
+				return fmt.Sprintf(resources.Get("tool.remember_fact.saved"), item.ID), nil
 			},
 		},
 		{
 			Name:        "forget_memory",
-			Description: "Delete one long-term memory by its numeric id. Call only when the current user explicitly asks to forget that specific fact. Use only an id present in the supplied long-term memory context.",
+			Description: resources.Get("tool.forget_fact.description"),
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -142,16 +142,16 @@ func (b *Bot) memoryTools(message *telegram.Message) []llm.Tool {
 			Execute: func(ctx context.Context, arguments map[string]string) (string, error) {
 				id, err := strconv.ParseInt(strings.TrimSpace(arguments["memory_id"]), 10, 64)
 				if err != nil || id < 1 {
-					return "Memory was not deleted: invalid memory id.", nil
+					return resources.Get("tool.forget_fact.invalid_id"), nil
 				}
 				deleted, err := b.memories.Forget(ctx, chatID, currentUserID, id)
 				if err != nil {
 					return "", err
 				}
 				if !deleted {
-					return "Memory was not found in the current user and chat scope.", nil
+					return resources.Get("tool.forget_fact.not_found"), nil
 				}
-				return fmt.Sprintf("Deleted long-term memory #%d.", id), nil
+				return fmt.Sprintf(resources.Get("tool.forget_fact.deleted"), id), nil
 			},
 		},
 	}
@@ -182,12 +182,12 @@ func memoryCommandError(err error) string {
 func memoryToolError(err error) string {
 	switch {
 	case errors.Is(err, longmemory.ErrEmpty):
-		return "Memory was not saved because the fact was empty."
+		return resources.Get("tool.remember_fact.empty")
 	case errors.Is(err, longmemory.ErrTooLong):
-		return fmt.Sprintf("Memory was not saved because it exceeds %d characters.", longmemory.MaxContentRunes)
+		return fmt.Sprintf(resources.Get("tool.remember_fact.too_long"), longmemory.MaxContentRunes)
 	case errors.Is(err, longmemory.ErrSensitive):
-		return "Memory was not saved because it appears to contain sensitive data."
+		return resources.Get("tool.remember_fact.sensitive")
 	default:
-		return "Memory could not be saved due to a storage error."
+		return resources.Get("tool.remember_fact.storage_error")
 	}
 }

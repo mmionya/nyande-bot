@@ -15,6 +15,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/disgoorg/disgolink/v4/lavalink"
+
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -39,7 +40,7 @@ type musicUIState struct {
 }
 
 var musicSources = []struct{ value, name string }{
-	{"ytm", "YouTube Music"}, {"yt", "YouTube"}, {"sc", "SoundCloud"}, {"bc", "Bandcamp"},
+	{"ytm", resources.Get("music.source.youtube_music")}, {"yt", resources.Get("music.source.youtube")}, {"sc", resources.Get("music.source.soundcloud")}, {"bc", resources.Get("music.source.bandcamp")},
 }
 
 func validMusicSource(source string) bool {
@@ -76,30 +77,30 @@ func musicApplicationCommand() *discordgo.ApplicationCommand {
 	text := func(name, description string, required bool) *discordgo.ApplicationCommandOption {
 		return &discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionString, Name: name, Description: description, Required: required, MaxLength: 500}
 	}
-	source := text("source", "Источник музыки", false)
+	source := text("source", resources.Get("music.command.source"), false)
 	for _, s := range musicSources {
 		source.Choices = append(source.Choices, &discordgo.ApplicationCommandOptionChoice{Name: s.name, Value: s.value})
 	}
 	integer := func(name, description string, min, max float64) *discordgo.ApplicationCommandOption {
 		return &discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionInteger, Name: name, Description: description, Required: true, MinValue: &min, MaxValue: max}
 	}
-	repeat := text("mode", "Режим повтора", true)
-	repeat.Choices = []*discordgo.ApplicationCommandOptionChoice{{Name: "Выключен", Value: "off"}, {Name: "Текущий трек", Value: "track"}, {Name: "Очередь", Value: "queue"}}
+	repeat := text("mode", resources.Get("music.command.repeat_mode"), true)
+	repeat.Choices = []*discordgo.ApplicationCommandOptionChoice{{Name: resources.Get("music.repeat.off"), Value: "off"}, {Name: resources.Get("music.repeat.track"), Value: "track"}, {Name: resources.Get("music.repeat.queue"), Value: "queue"}}
 	dm := false
-	return &discordgo.ApplicationCommand{Name: "nyande", Description: "Поиск и воспроизведение музыки", DMPermission: &dm, Options: []*discordgo.ApplicationCommandOption{
-		sub("search", "Открыть поиск музыки", text("query", "Название, исполнитель или ссылка", false), source),
-		sub("play", "Запустить трек или добавить в очередь", text("query", "Название или ссылка", true), source),
-		sub("queue", "Посмотреть очередь"), sub("player", "Показать проигрыватель"),
-		sub("skip", "Пропустить трек"), sub("pause", "Пауза"), sub("resume", "Продолжить"),
-		sub("stop", "Остановить и выйти"), sub("shuffle", "Перемешать ожидающие треки"), sub("clear", "Очистить очередь, оставив текущий трек"),
-		sub("move", "Переставить ожидающий трек", integer("from", "Позиция в очереди", 1, 50), integer("to", "Новая позиция", 1, 50)),
-		sub("volume", "Установить громкость", integer("value", "Громкость в процентах", 0, 100)),
-		sub("repeat", "Повтор трека или очереди", repeat), sub("help", "Справка по музыке"),
+	return &discordgo.ApplicationCommand{Name: "nyande", Description: resources.Get("music.command.description"), DMPermission: &dm, Options: []*discordgo.ApplicationCommandOption{
+		sub("search", resources.Get("music.command.search"), text("query", resources.Get("music.command.search_query"), false), source),
+		sub("play", resources.Get("music.command.play"), text("query", resources.Get("music.command.play_query"), true), source),
+		sub("queue", resources.Get("music.command.queue")), sub("player", resources.Get("music.command.player")),
+		sub("skip", resources.Get("music.command.skip")), sub("pause", resources.Get("music.command.pause")), sub("resume", resources.Get("music.command.resume")),
+		sub("stop", resources.Get("music.command.stop")), sub("shuffle", resources.Get("music.command.shuffle")), sub("clear", resources.Get("music.command.clear")),
+		sub("move", resources.Get("music.command.move"), integer("from", resources.Get("music.command.move_from"), 1, 50), integer("to", resources.Get("music.command.move_to"), 1, 50)),
+		sub("volume", resources.Get("music.command.volume"), integer("value", resources.Get("music.command.volume_value"), 0, 100)),
+		sub("repeat", resources.Get("music.command.repeat"), repeat), sub("help", resources.Get("music.command.help")),
 	}}
 }
 func (b *Bot) registerMusicCommands() error {
 	if b.session.State == nil || b.session.State.User == nil {
-		return fmt.Errorf("Discord identity unavailable")
+		return errors.New(resources.Get("discord.error.identity_unavailable"))
 	}
 	_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", musicApplicationCommand())
 	return err
@@ -115,7 +116,7 @@ func musicInteractionMessage(i *discordgo.Interaction, command, query string) *d
 }
 func musicRespond(s *discordgo.Session, i *discordgo.Interaction, t discordgo.InteractionResponseType, data *discordgo.InteractionResponseData) bool {
 	if err := s.InteractionRespond(i, &discordgo.InteractionResponse{Type: t, Data: data}); err != nil {
-		log.Printf("[music] interaction response failed: %v", err)
+		log.Printf(resources.Get("music.log.interaction_response_failed"), err)
 		return false
 	}
 	return true
@@ -131,12 +132,12 @@ func musicDefer(s *discordgo.Session, i *discordgo.Interaction, update bool) boo
 }
 func musicEdit(s *discordgo.Session, i *discordgo.Interaction, data *discordgo.InteractionResponseData) {
 	if _, err := s.InteractionResponseEdit(i, &discordgo.WebhookEdit{Content: &data.Content, Embeds: &data.Embeds, Components: &data.Components, AllowedMentions: noMusicMentions()}); err != nil {
-		log.Printf("[music] interaction edit failed: %v", err)
+		log.Printf(resources.Get("music.log.interaction_edit_failed"), err)
 	}
 }
 func musicModal(s *discordgo.Session, i *discordgo.Interaction, source string) {
-	musicRespond(s, i, discordgo.InteractionResponseModal, &discordgo.InteractionResponseData{CustomID: "music:modal:" + source, Title: "Поиск · " + musicSourceName(source), Components: []discordgo.MessageComponent{
-		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "query", Label: "Название, исполнитель или ссылка", Style: discordgo.TextInputShort, Placeholder: "Что хочешь послушать?", Required: true, MinLength: 1, MaxLength: 500}}},
+	musicRespond(s, i, discordgo.InteractionResponseModal, &discordgo.InteractionResponseData{CustomID: "music:modal:" + source, Title: resources.Format("music.modal.title", map[string]any{"source": musicSourceName(source)}), Components: []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.TextInput{CustomID: "query", Label: resources.Get("music.command.search_query"), Style: discordgo.TextInputShort, Placeholder: resources.Get("music.modal.placeholder"), Required: true, MinLength: 1, MaxLength: 500}}},
 	}})
 }
 func musicModalQuery(data discordgo.ModalSubmitInteractionData) string {
@@ -163,7 +164,7 @@ func (b *Bot) handleMusicInteraction(s *discordgo.Session, event *discordgo.Inte
 		if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
 			musicRespond(s, i, discordgo.InteractionApplicationCommandAutocompleteResult, &discordgo.InteractionResponseData{Choices: []*discordgo.ApplicationCommandOptionChoice{}})
 		} else {
-			musicPrivate(s, i, "Доступ к боту заблокирован.")
+			musicPrivate(s, i, resources.Get("access.blocked"))
 		}
 		return
 	}
@@ -274,7 +275,7 @@ func (b *Bot) handleMusicInteraction(s *discordgo.Session, event *discordgo.Inte
 		musicEdit(s, i, &discordgo.InteractionResponseData{Content: result})
 		if command != "queue" {
 			if err := b.refreshMusicPanel(s, i.GuildID, i.ChannelID, command == "play"); err != nil {
-				log.Printf("[music] panel update failed: %v", err)
+				log.Printf(resources.Get("music.log.panel_update_failed"), err)
 			}
 		}
 	case discordgo.InteractionModalSubmit:
@@ -319,7 +320,7 @@ func (b *Bot) searchMusicUI(s *discordgo.Session, i *discordgo.Interaction, quer
 	}
 	m, err := b.getMusic(s)
 	if err != nil {
-		log.Printf("[music] browser unavailable: %v", err)
+		log.Printf(resources.Get("music.log.browser_unavailable"), err)
 		musicEdit(s, i, &discordgo.InteractionResponseData{Content: resources.Get("music.unavailable")})
 		return
 	}
@@ -327,7 +328,7 @@ func (b *Bot) searchMusicUI(s *discordgo.Session, i *discordgo.Interaction, quer
 	defer cancel()
 	tracks, err := m.backend.load(ctx, identifier)
 	if err != nil {
-		log.Printf("[music] browser search failed: %v", err)
+		log.Printf(resources.Get("music.log.browser_search_failed"), err)
 		musicEdit(s, i, &discordgo.InteractionResponseData{Content: resources.Get("music.failed")})
 		return
 	}
@@ -364,7 +365,7 @@ func musicSearchHome(source string) *discordgo.InteractionResponseData {
 	}
 	return &discordgo.InteractionResponseData{Content: resources.Get("music.ui_home"), Components: []discordgo.MessageComponent{
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{CustomID: "music:home:source", Options: options, MaxValues: 1}}},
-		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.Button{CustomID: "music:home:new:" + source, Label: "Новый поиск", Style: discordgo.SuccessButton}}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.Button{CustomID: "music:home:new:" + source, Label: resources.Get("music.button.new_search"), Style: discordgo.SuccessButton}}},
 	}}
 }
 func (b *Bot) handleMusicComponent(s *discordgo.Session, i *discordgo.Interaction) {
@@ -483,7 +484,7 @@ func (b *Bot) handleMusicComponent(s *discordgo.Session, i *discordgo.Interactio
 		browser.mu.Unlock()
 		if success {
 			if err := b.refreshMusicPanel(s, i.GuildID, i.ChannelID, true); err != nil {
-				log.Printf("[music] panel publish failed: %v", err)
+				log.Printf(resources.Get("music.log.panel_publish_failed"), err)
 			}
 		}
 		return
@@ -493,7 +494,7 @@ func (b *Bot) handleMusicComponent(s *discordgo.Session, i *discordgo.Interactio
 }
 func parseMusicPage(parts []string) (int, error) {
 	if len(parts) != 5 {
-		return 0, fmt.Errorf("missing page")
+		return 0, errors.New(resources.Get("music.error.missing_page"))
 	}
 	return strconv.Atoi(parts[4])
 }
@@ -503,7 +504,7 @@ func (v *musicBrowser) pageBounds() (int, int) {
 }
 func (v *musicBrowser) render() *discordgo.InteractionResponseData {
 	start, end := v.pageBounds()
-	embed := &discordgo.MessageEmbed{Title: "Треки по запросу «" + truncateMessage(v.query, 80) + "»", Color: 0x2ecc71}
+	embed := &discordgo.MessageEmbed{Title: resources.Format("music.search.title", map[string]any{"query": truncateMessage(v.query, 80)}), Color: 0x2ecc71}
 	var body strings.Builder
 	var options []discordgo.SelectMenuOption
 	for index := start; index < end; index++ {
@@ -512,15 +513,15 @@ func (v *musicBrowser) render() *discordgo.InteractionResponseData {
 		if v.selected[index] {
 			mark = "●"
 		}
-		fmt.Fprintf(&body, "%s **%d.** %s — %s `%s`\n", mark, index+1, musicTitle(track), musicText(track.Info.Author, 60), musicLength(track))
+		fmt.Fprintf(&body, resources.Get("music.search.track_description"), mark, index+1, musicTitle(track), musicText(track.Info.Author, 60), musicLength(track))
 		options = append(options, discordgo.SelectMenuOption{Label: musicText(musicTitle(track), 100), Value: strconv.Itoa(index), Description: musicText(track.Info.Author, 65) + " · " + musicLength(track), Default: v.selected[index]})
 	}
 	if len(v.tracks) == 0 {
 		body.WriteString(resources.Get("music.empty"))
 	}
-	fmt.Fprintf(&body, "\n**Выбрано: %d** · Порядок соответствует списку.", len(v.selected))
+	fmt.Fprintf(&body, resources.Get("music.search.selected"), len(v.selected))
 	embed.Description = body.String()
-	embed.Footer = &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("%s · Страница %d/%d · %d треков · Поиск действует 10 минут", musicSourceName(v.source), v.page+1, max(1, (len(v.tracks)+9)/10), len(v.tracks))}
+	embed.Footer = &discordgo.MessageEmbedFooter{Text: fmt.Sprintf(resources.Get("music.search.footer"), musicSourceName(v.source), v.page+1, max(1, (len(v.tracks)+9)/10), len(v.tracks))}
 	if start < len(v.tracks) && v.tracks[start].Info.ArtworkURL != nil {
 		if url := musicURL(*v.tracks[start].Info.ArtworkURL); url != "" {
 			embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: url}
@@ -530,14 +531,14 @@ func (v *musicBrowser) render() *discordgo.InteractionResponseData {
 	zero := 0
 	var components []discordgo.MessageComponent
 	if len(options) > 0 {
-		components = append(components, discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{CustomID: prefix + "select:" + strconv.Itoa(v.page), Placeholder: "Выбери треки на этой странице", MinValues: &zero, MaxValues: len(options), Options: options, Disabled: v.busy || v.consumed}}})
+		components = append(components, discordgo.ActionsRow{Components: []discordgo.MessageComponent{discordgo.SelectMenu{CustomID: prefix + "select:" + strconv.Itoa(v.page), Placeholder: resources.Get("music.search.placeholder"), MinValues: &zero, MaxValues: len(options), Options: options, Disabled: v.busy || v.consumed}}})
 	}
 	components = append(components, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{CustomID: prefix + "add", Label: "Добавить выбранные", Style: discordgo.SuccessButton, Disabled: len(v.selected) == 0 || v.busy || v.consumed},
-		discordgo.Button{CustomID: prefix + "page:" + strconv.Itoa(v.page-1), Label: "◀", Style: discordgo.SecondaryButton, Disabled: v.page == 0 || v.busy || v.consumed},
-		discordgo.Button{CustomID: prefix + "page:" + strconv.Itoa(v.page+1), Label: "▶", Style: discordgo.SecondaryButton, Disabled: end >= len(v.tracks) || v.busy || v.consumed},
+		discordgo.Button{CustomID: prefix + "add", Label: resources.Get("music.button.add_selected"), Style: discordgo.SuccessButton, Disabled: len(v.selected) == 0 || v.busy || v.consumed},
+		discordgo.Button{CustomID: prefix + "page:" + strconv.Itoa(v.page-1), Label: resources.Get("music.button.previous"), Style: discordgo.SecondaryButton, Disabled: v.page == 0 || v.busy || v.consumed},
+		discordgo.Button{CustomID: prefix + "page:" + strconv.Itoa(v.page+1), Label: resources.Get("music.button.next"), Style: discordgo.SecondaryButton, Disabled: end >= len(v.tracks) || v.busy || v.consumed},
 	}}, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{CustomID: prefix + "back", Label: "Назад", Style: discordgo.SecondaryButton}, discordgo.Button{CustomID: prefix + "new", Label: "Новый поиск", Style: discordgo.SuccessButton},
+		discordgo.Button{CustomID: prefix + "back", Label: resources.Get("music.button.back"), Style: discordgo.SecondaryButton}, discordgo.Button{CustomID: prefix + "new", Label: resources.Get("music.button.new_search"), Style: discordgo.SuccessButton},
 	}})
 	content := ""
 	if v.busy {
@@ -576,7 +577,7 @@ func musicURL(raw string) string {
 }
 func musicLength(track lavalink.Track) string {
 	if track.Info.IsStream {
-		return "LIVE"
+		return resources.Get("music.duration.live")
 	}
 	if track.Info.Length <= 0 || track.Info.Length > lavalink.Duration((48*time.Hour).Milliseconds()) {
 		return "—"
@@ -592,7 +593,7 @@ func musicDuration(duration lavalink.Duration) string {
 }
 
 func musicPanelView(g *musicGuild, nonce string) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
-	embed := &discordgo.MessageEmbed{Title: "Ничего не играет", Description: resources.Get("music.queue_empty"), Color: 0x2ecc71, Author: &discordgo.MessageEmbedAuthor{Name: "NYANDE · ПРОИГРЫВАТЕЛЬ"}}
+	embed := &discordgo.MessageEmbed{Title: resources.Get("music.panel.stopped"), Description: resources.Get("music.queue_empty"), Color: 0x2ecc71, Author: &discordgo.MessageEmbedAuthor{Name: resources.Get("music.panel.author")}}
 	stopped := g.current == nil
 	if !stopped {
 		track := *g.current
@@ -615,21 +616,21 @@ func musicPanelView(g *musicGuild, nonce string) (*discordgo.MessageEmbed, []dis
 		if mode == "" {
 			mode = "off"
 		}
-		embed.Description = fmt.Sprintf("%s · %s\n\n`%s / %s`%s\n\nПовтор: **%s** · Громкость: **%d%%** · В очереди: **%d**", musicText(track.Info.Author, 100), musicText(track.Info.SourceName, 30), musicDuration(position), musicLength(track), progress, mode, g.volume, len(g.queue))
+		embed.Description = fmt.Sprintf(resources.Get("music.panel.description"), musicText(track.Info.Author, 100), musicText(track.Info.SourceName, 30), musicDuration(position), musicLength(track), progress, mode, g.volume, len(g.queue))
 		if g.paused {
-			embed.Description += "\n⏸ Пауза"
+			embed.Description += resources.Get("music.panel.paused")
 		}
 	}
 	button := func(action, label string, style discordgo.ButtonStyle) discordgo.Button {
 		return discordgo.Button{CustomID: "music:panel:" + nonce + ":" + action, Label: label, Style: style, Disabled: stopped}
 	}
-	pause := "⏸"
+	pause := resources.Get("music.button.pause")
 	if g.paused {
-		pause = "▶"
+		pause = resources.Get("music.button.next")
 	}
 	components := []discordgo.MessageComponent{
-		discordgo.ActionsRow{Components: []discordgo.MessageComponent{button("toggle", pause, discordgo.SuccessButton), button("skip", "⏭", discordgo.SecondaryButton), button("repeat", "🔁", discordgo.SecondaryButton), button("shuffle", "🔀", discordgo.SecondaryButton), button("stop", "⏹", discordgo.DangerButton)}},
-		discordgo.ActionsRow{Components: []discordgo.MessageComponent{button("voldown", "🔉 −10", discordgo.SecondaryButton), button("volup", "🔊 +10", discordgo.SecondaryButton), button("queue", "📜 Очередь", discordgo.SecondaryButton)}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{button("toggle", pause, discordgo.SuccessButton), button("skip", resources.Get("music.button.skip"), discordgo.SecondaryButton), button("repeat", resources.Get("music.button.repeat"), discordgo.SecondaryButton), button("shuffle", resources.Get("music.button.shuffle"), discordgo.SecondaryButton), button("stop", resources.Get("music.button.stop"), discordgo.DangerButton)}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{button("voldown", resources.Get("music.button.volume_down"), discordgo.SecondaryButton), button("volup", resources.Get("music.button.volume_up"), discordgo.SecondaryButton), button("queue", resources.Get("music.button.queue"), discordgo.SecondaryButton)}},
 	}
 	return embed, components
 }
@@ -710,7 +711,7 @@ func (b *Bot) handleMusicPanelButton(s *discordgo.Session, i *discordgo.Interact
 	musicEdit(s, i, &discordgo.InteractionResponseData{Content: text})
 	if action != "queue" {
 		if err := b.refreshMusicPanel(s, i.GuildID, i.ChannelID, false); err != nil {
-			log.Printf("[music] panel refresh failed: %v", err)
+			log.Printf(resources.Get("music.log.panel_refresh_failed"), err)
 		}
 	}
 }
@@ -733,7 +734,7 @@ func (b *Bot) musicPanelLoop(ctx context.Context) {
 					return
 				}
 				if err := b.refreshMusicPanel(b.session, guild, "", false); err != nil {
-					log.Printf("[music] periodic panel update failed: %v", err)
+					log.Printf(resources.Get("music.log.periodic_panel_update_failed"), err)
 				}
 			}
 			b.musicUI.mu.Lock()

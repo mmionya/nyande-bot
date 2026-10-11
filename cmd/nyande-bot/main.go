@@ -12,6 +12,7 @@ import (
 	"github.com/mmionya/nyande-bot/internal/bot"
 	"github.com/mmionya/nyande-bot/internal/config"
 	"github.com/mmionya/nyande-bot/internal/discordbot"
+	"github.com/mmionya/nyande-bot/resources"
 )
 
 func main() {
@@ -40,21 +41,21 @@ func run() (runErr error) {
 	if cfg.BotToken != "" {
 		application, err := bot.New(cfg)
 		if err != nil {
-			return fmt.Errorf("initialize Telegram bot: %w", err)
+			return fmt.Errorf(resources.Get("main.error.initialize_telegram_bot"), err)
 		}
 		services = append(services, namedService{name: "telegram", service: application})
 	}
 	defer func() {
 		for index := len(services) - 1; index >= 0; index-- {
 			if err := services[index].Close(); err != nil {
-				runErr = errors.Join(runErr, fmt.Errorf("close %s bot: %w", services[index].name, err))
+				runErr = errors.Join(runErr, fmt.Errorf(resources.Get("main.error.close_bot"), services[index].name, err))
 			}
 		}
 	}()
 	if cfg.DiscordToken != "" {
 		application, err := discordbot.New(cfg)
 		if err != nil {
-			return fmt.Errorf("initialize Discord bot: %w", err)
+			return fmt.Errorf(resources.Get("main.error.initialize_discord_bot"), err)
 		}
 		services = append(services, namedService{name: "discord", service: application})
 	}
@@ -76,13 +77,13 @@ func run() (runErr error) {
 		result := <-results
 		if ctx.Err() == nil {
 			if result.err == nil || errors.Is(result.err, context.Canceled) {
-				runErr = fmt.Errorf("%s bot stopped unexpectedly", result.name)
+				runErr = fmt.Errorf(resources.Get("main.error.bot_stopped_unexpectedly"), result.name)
 			} else {
-				runErr = fmt.Errorf("run %s bot: %w", result.name, result.err)
+				runErr = fmt.Errorf(resources.Get("main.error.run_bot"), result.name, result.err)
 			}
 			cancel()
 		} else if result.err != nil && !errors.Is(result.err, context.Canceled) && runErr == nil {
-			runErr = fmt.Errorf("run %s bot: %w", result.name, result.err)
+			runErr = fmt.Errorf(resources.Get("main.error.run_bot"), result.name, result.err)
 		}
 	}
 	return runErr

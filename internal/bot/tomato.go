@@ -17,6 +17,7 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/llm"
 	"github.com/mmionya/nyande-bot/internal/telegram"
+	"github.com/mmionya/nyande-bot/resources"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
@@ -53,17 +54,17 @@ func (b *Bot) tomatoTool(message *telegram.Message) llm.Tool {
 	sent := false
 	return llm.Tool{
 		Name:        "throw_tomatoes",
-		Description: "Create and send an animated GIF showing the replied-to message inside a realistic Telegram chat interface while a tomato is thrown over it. Call this when the user asks to throw tomatoes at, pelt, boo, or tomato-splat a message, including Russian requests such as 'закидай помидорами' or 'кинь в это помидор'. The tool targets the replied-to message automatically and takes no arguments.",
+		Description: resources.Get("tool.throw_tomato.description"),
 		Parameters: map[string]any{
 			"type": "object", "properties": map[string]any{}, "additionalProperties": false,
 		},
 		Execute: func(ctx context.Context, _ map[string]string) (string, error) {
 			if sent {
-				return "The tomato animation was already sent. Do not call this tool again.", nil
+				return resources.Get("tool.throw_tomato.already_sent"), nil
 			}
 			target := message.ReplyToMessage
 			if target == nil {
-				return "There is no replied-to message. Ask the user to reply to the target message and repeat the request.", nil
+				return resources.Get("tool.throw_tomato.reply_required"), nil
 			}
 			animation, err := renderTelegramTomatoGIF(target, userID(message))
 			if err != nil {
@@ -76,21 +77,21 @@ func (b *Bot) tomatoTool(message *telegram.Message) llm.Tool {
 				return "", err
 			}
 			sent = true
-			return "A tomato was composited over the target message in a Telegram chat animation and sent. Briefly acknowledge it without calling the tool again.", nil
+			return resources.Get("tool.throw_tomato.sent"), nil
 		},
 	}
 }
 
 func renderTelegramTomatoGIF(message *telegram.Message, viewerID int64) ([]byte, error) {
 	if message == nil {
-		return nil, errors.New("target message is missing")
+		return nil, errors.New(resources.Get("telegram.error.tomato_target_missing"))
 	}
 	source, err := gif.DecodeAll(bytes.NewReader(tomatoThrowGIF))
 	if err != nil {
-		return nil, fmt.Errorf("decode tomato animation: %w", err)
+		return nil, fmt.Errorf(resources.Get("telegram.error.tomato_decode"), err)
 	}
 	if len(source.Image) == 0 {
-		return nil, errors.New("tomato animation contains no frames")
+		return nil, errors.New(resources.Get("telegram.error.tomato_frames_empty"))
 	}
 	faces, err := newTelegramFaces()
 	if err != nil {
@@ -141,7 +142,7 @@ func renderTelegramTomatoGIF(message *telegram.Message, viewerID int64) ([]byte,
 
 	var encoded bytes.Buffer
 	if err := gif.EncodeAll(&encoded, output); err != nil {
-		return nil, fmt.Errorf("encode Telegram tomato animation: %w", err)
+		return nil, fmt.Errorf(resources.Get("telegram.error.tomato_encode"), err)
 	}
 	return encoded.Bytes(), nil
 }
@@ -154,14 +155,14 @@ func renderTelegramMessage(message *telegram.Message, viewerID int64, faces tele
 	drawTelegramComposer(canvas, faces)
 
 	outgoing := message.From != nil && viewerID != 0 && message.From.ID == viewerID
-	author := "Сообщение"
+	author := resources.Get("telegram.tomato.message")
 	if message.From != nil {
 		author = message.From.DisplayName()
 	}
 	content := strings.TrimSpace(message.ContentText())
 	mediaLabel := telegramMediaLabel(message)
 	if content == "" && mediaLabel == "" {
-		content = "Сообщение"
+		content = resources.Get("telegram.tomato.message")
 	}
 
 	maximumTextWidth := 430
@@ -229,8 +230,8 @@ func drawTelegramHeader(canvas *image.RGBA, faces telegramFaces) {
 	fill(canvas, image.Rect(0, 0, tomatoGIFWidth, tomatoHeader), color.RGBA{R: 23, G: 33, B: 43, A: 255})
 	drawCircle(canvas, 34, 29, 18, color.RGBA{R: 49, G: 137, B: 206, A: 255})
 	drawText(canvas, faces.header, 27, 36, "C", color.White)
-	drawText(canvas, faces.bold, 64, 25, "Nyande chat", color.RGBA{R: 244, G: 247, B: 249, A: 255})
-	drawText(canvas, faces.small, 64, 44, "участники чата", color.RGBA{R: 132, G: 158, B: 179, A: 255})
+	drawText(canvas, faces.bold, 64, 25, resources.Get("telegram.tomato.chat_name"), color.RGBA{R: 244, G: 247, B: 249, A: 255})
+	drawText(canvas, faces.small, 64, 44, resources.Get("telegram.tomato.chat_members"), color.RGBA{R: 132, G: 158, B: 179, A: 255})
 	drawSearchIcon(canvas, 646, 28)
 	for _, y := range []int{21, 28, 35} {
 		drawCircle(canvas, 690, y, 2, color.RGBA{R: 160, G: 178, B: 193, A: 255})
@@ -241,7 +242,7 @@ func drawTelegramComposer(canvas *image.RGBA, faces telegramFaces) {
 	top := tomatoGIFHeight - tomatoComposer
 	fill(canvas, image.Rect(0, top, tomatoGIFWidth, tomatoGIFHeight), color.RGBA{R: 23, G: 33, B: 43, A: 255})
 	drawPaperclip(canvas, 29, top+27)
-	drawText(canvas, faces.regular, 58, top+34, "Сообщение", color.RGBA{R: 111, G: 130, B: 145, A: 255})
+	drawText(canvas, faces.regular, 58, top+34, resources.Get("telegram.tomato.message"), color.RGBA{R: 111, G: 130, B: 145, A: 255})
 	drawCircle(canvas, 647, top+27, 17, color.RGBA{R: 43, G: 82, B: 120, A: 255})
 	drawMicrophone(canvas, 647, top+26)
 	drawCircle(canvas, 693, top+27, 17, color.RGBA{R: 48, G: 156, B: 215, A: 255})
@@ -266,11 +267,11 @@ func drawTelegramMedia(canvas *image.RGBA, rectangle image.Rectangle, label stri
 	}
 	drawCircle(canvas, rectangle.Min.X+rectangle.Dx()/2, rectangle.Min.Y+rectangle.Dy()/2-8, 25, color.RGBA{R: 240, G: 244, B: 247, A: 220})
 	icon := "▶"
-	if label == "ФОТО" {
+	if label == resources.Get("telegram.tomato.photo") {
 		icon = "●"
-	} else if label == "АУДИО" || label == "ГОЛОСОВОЕ" {
+	} else if label == resources.Get("telegram.tomato.audio") || label == resources.Get("telegram.tomato.voice") {
 		icon = "♪"
-	} else if label == "ФАЙЛ" {
+	} else if label == resources.Get("telegram.tomato.file") {
 		icon = "▤"
 	}
 	iconWidth := font.MeasureString(faces.bold, icon).Ceil()
@@ -382,17 +383,17 @@ func alphaOver(background, foreground color.Color) color.RGBA {
 func telegramMediaLabel(message *telegram.Message) string {
 	switch {
 	case len(message.Photo) > 0:
-		return "ФОТО"
+		return resources.Get("telegram.tomato.photo")
 	case message.Video != nil:
-		return "ВИДЕО"
+		return resources.Get("telegram.tomato.video")
 	case message.Animation != nil:
-		return "GIF"
+		return resources.Get("telegram.tomato.gif")
 	case message.Audio != nil:
-		return "АУДИО"
+		return resources.Get("telegram.tomato.audio")
 	case message.Voice != nil:
-		return "ГОЛОСОВОЕ"
+		return resources.Get("telegram.tomato.voice")
 	case message.Document != nil:
-		return "ФАЙЛ"
+		return resources.Get("telegram.tomato.file")
 	default:
 		return ""
 	}

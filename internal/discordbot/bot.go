@@ -57,11 +57,11 @@ type Bot struct {
 
 func New(cfg config.Config) (*Bot, error) {
 	if strings.TrimSpace(cfg.DiscordToken) == "" {
-		return nil, errors.New("DISCORD_BOT_TOKEN is empty")
+		return nil, errors.New(resources.Get("discord.error.missing_token"))
 	}
 	settings, err := loadLLMSettings(cfg.DiscordLLMSettingsFile)
 	if err != nil {
-		return nil, fmt.Errorf("load Discord LLM settings: %w", err)
+		return nil, fmt.Errorf(resources.Get("discord.error.load_llm_settings"), err)
 	}
 	banFile := cfg.BannedUsersFile
 	if banFile == "" {
@@ -69,11 +69,11 @@ func New(cfg config.Config) (*Bot, error) {
 	}
 	accessStore, err := access.Open(banFile+".discord", cfg.DiscordOwnerIDs)
 	if err != nil {
-		return nil, fmt.Errorf("load Discord bans: %w", err)
+		return nil, fmt.Errorf(resources.Get("discord.error.load_bans"), err)
 	}
 	session, err := discordgo.New("Bot " + strings.TrimSpace(cfg.DiscordToken))
 	if err != nil {
-		return nil, fmt.Errorf("create Discord session: %w", err)
+		return nil, fmt.Errorf(resources.Get("discord.error.create_session"), err)
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildVoiceStates | discordgo.IntentsGuildMessages |
 		discordgo.IntentsDirectMessages |
@@ -98,19 +98,19 @@ func (b *Bot) Run(ctx context.Context) error {
 	b.ctxMu.Unlock()
 
 	if err := b.session.Open(); err != nil {
-		return fmt.Errorf("open Discord gateway: %w", err)
+		return fmt.Errorf(resources.Get("discord.error.open_gateway"), err)
 	}
-	identity := "Discord bot"
+	identity := resources.Get("discord.default_name")
 	if b.session.State != nil && b.session.State.User != nil {
 		identity = b.session.State.User.Username
 	}
-	log.Printf("[discord] started as %s, command_prefix=%q", identity, b.cfg.DiscordPrefix)
+	log.Printf(resources.Get("discord.log.started"), identity, b.cfg.DiscordPrefix)
 	if err := b.session.UpdateGameStatus(0, resources.Format("discord_activity", map[string]any{"prefix": b.cfg.DiscordPrefix})); err != nil {
-		log.Printf("[discord] could not update status: %v", err)
+		log.Printf(resources.Get("discord.log.status_update_failed"), err)
 	}
 
 	if err := b.registerDiscordCommands(); err != nil {
-		log.Printf("[discord] slash command registration failed: %v", err)
+		log.Printf(resources.Get("discord.log.command_registration_failed"), err)
 	}
 	go b.musicPanelLoop(ctx)
 	<-ctx.Done()
@@ -171,7 +171,7 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 	if message.Author != nil {
 		author = message.Author.ID
 	}
-	log.Printf("[command] started platform=discord chat=%s user=%s msg=%s command=%q", message.ChannelID, author, message.ID, command)
+	log.Printf(resources.Get("discord.log.command_started"), message.ChannelID, author, message.ID, command)
 	var response string
 	switch command {
 	case "botban", "botunban":
@@ -181,7 +181,7 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 	case "gif":
 		b.commands.Add(1)
 		err := b.handleGIF(session, message)
-		log.Printf("[command] finished platform=discord chat=%s user=%s msg=%s command=%q failed=%t elapsed_ms=%d", message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
+		log.Printf(resources.Get("discord.log.command_finished"), message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
 		return true
 	case "llm":
 		response = b.configureLLM(session, message)
@@ -194,26 +194,26 @@ func (b *Bot) handleCommand(session *discordgo.Session, message *discordgo.Messa
 	case "stats":
 		response = b.statsText()
 	default:
-		log.Printf("[command] unknown platform=discord chat=%s msg=%s command=%q", message.ChannelID, message.ID, command)
+		log.Printf(resources.Get("discord.log.command_unknown"), message.ChannelID, message.ID, command)
 		return false
 	}
 	b.commands.Add(1)
 	_, err := session.ChannelMessageSendReply(message.ChannelID, response, message.SoftReference())
 	if err != nil {
-		log.Printf("[discord] command %s response failed: %v", command, err)
+		log.Printf(resources.Get("discord.log.command_response_failed"), command, err)
 	}
-	log.Printf("[command] finished platform=discord chat=%s user=%s msg=%s command=%q failed=%t elapsed_ms=%d", message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
+	log.Printf(resources.Get("discord.log.command_finished"), message.ChannelID, author, message.ID, command, err != nil, time.Since(started).Milliseconds())
 	return true
 }
 
 func (b *Bot) handleMedia(session *discordgo.Session, message *discordgo.Message, mediaURL string) {
 	started := time.Now()
-	log.Printf("[media] download_started platform=discord chat=%s msg=%s url=%q", message.ChannelID, message.ID, logutil.URL(mediaURL))
+	log.Printf(resources.Get("discord.log.media_download_started"), message.ChannelID, message.ID, logutil.URL(mediaURL))
 	b.mediaTotal.Add(1)
 	status, err := session.ChannelMessageSendReply(message.ChannelID, resources.Get("discord_downloading"), message.SoftReference())
 	if err != nil {
 		b.mediaErrors.Add(1)
-		log.Printf("[discord] could not send download status: %v", err)
+		log.Printf(resources.Get("discord.log.download_status_failed"), err)
 		return
 	}
 
@@ -222,33 +222,33 @@ func (b *Bot) handleMedia(session *discordgo.Session, message *discordgo.Message
 	result, err := b.downloader.Download(ctx, mediaURL)
 	if err != nil {
 		b.mediaErrors.Add(1)
-		log.Printf("[media] download_failed platform=discord chat=%s msg=%s url=%q elapsed_ms=%d: %v", message.ChannelID, message.ID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
+		log.Printf(resources.Get("discord.log.media_download_failed"), message.ChannelID, message.ID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
 		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, downloadErrorText(err))
 		return
 	}
 	if len(result.Items) == 0 {
-		log.Printf("[media] download_empty platform=discord chat=%s msg=%s source=%q", message.ChannelID, message.ID, result.Source)
+		log.Printf(resources.Get("discord.log.media_download_empty"), message.ChannelID, message.ID, result.Source)
 		b.mediaErrors.Add(1)
 		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_media_not_found"))
 		return
 	}
 
-	log.Printf("[media] downloaded platform=discord chat=%s msg=%s source=%q items=%d elapsed_ms=%d", message.ChannelID, message.ID, result.Source, len(result.Items), time.Since(started).Milliseconds())
+	log.Printf(resources.Get("discord.log.media_downloaded"), message.ChannelID, message.ID, result.Source, len(result.Items), time.Since(started).Milliseconds())
 	for index, item := range result.Items {
-		log.Printf("[media] file platform=discord chat=%s msg=%s index=%d kind=%q name=%q bytes=%d", message.ChannelID, message.ID, index+1, item.Kind, item.Name, len(item.Data))
+		log.Printf(resources.Get("discord.log.media_file"), message.ChannelID, message.ID, index+1, item.Kind, item.Name, len(item.Data))
 	}
 	sendStarted := time.Now()
-	log.Printf("[media] send_started platform=discord chat=%s msg=%s items=%d", message.ChannelID, message.ID, len(result.Items))
+	log.Printf(resources.Get("discord.log.media_send_started"), message.ChannelID, message.ID, len(result.Items))
 	_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_sending"))
 	if err := sendResult(session, message, result); err != nil {
 		b.mediaErrors.Add(1)
-		log.Printf("[media] send_failed platform=discord chat=%s msg=%s elapsed_ms=%d: %v", message.ChannelID, message.ID, time.Since(sendStarted).Milliseconds(), err)
+		log.Printf(resources.Get("discord.log.media_send_failed"), message.ChannelID, message.ID, time.Since(sendStarted).Milliseconds(), err)
 		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("discord_send_failed"))
 		return
 	}
-	log.Printf("[media] sent platform=discord chat=%s msg=%s items=%d send_ms=%d total_ms=%d", message.ChannelID, message.ID, len(result.Items), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
+	log.Printf(resources.Get("discord.log.media_sent"), message.ChannelID, message.ID, len(result.Items), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
 	if err := session.ChannelMessageDelete(message.ChannelID, status.ID); err != nil {
-		log.Printf("[discord] could not remove download status: %v", err)
+		log.Printf(resources.Get("discord.log.download_status_remove_failed"), err)
 	}
 }
 
