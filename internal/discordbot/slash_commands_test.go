@@ -1,6 +1,7 @@
 package discordbot
 
 import (
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,6 +31,20 @@ func lastSlashText(t *testing.T, r *musicUIRecorder) string {
 func TestStandaloneSlashRegistration(t *testing.T) {
 	b, _ := testMusicBot(t)
 	record := recordMusicUI(t, b)
+	transport := b.session.Client.Transport
+	b.session.Client.Transport = discordRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		// A real transport rejects the request if its deadline expired while
+		// discordgo was waiting for the rate-limit bucket before calling Do.
+		if err := r.Context().Err(); err != nil {
+			return nil, err
+		}
+		response, err := transport.RoundTrip(r)
+		if err == nil && len(record.requests) == 1 {
+			response.Header.Set("X-RateLimit-Remaining", "0")
+			response.Header.Set("X-RateLimit-Reset-After", "5.1")
+		}
+		return response, err
+	})
 	if err := b.registerDiscordCommands(); err != nil {
 		t.Fatal(err)
 	}

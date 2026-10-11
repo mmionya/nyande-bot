@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/mmionya/nyande-bot/resources"
@@ -43,9 +42,9 @@ func (b *Bot) registerDiscordCommands() error {
 	var errs []error
 	for _, command := range discordApplicationCommands() {
 		// Upsert our commands without deleting unrelated application commands.
-		ctx, cancel := context.WithTimeout(b.currentContext(), 5*time.Second)
-		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", command, discordgo.WithContext(ctx))
-		cancel()
+		// The HTTP client limits network time; allow discordgo's rate-limit wait
+		// before the request to finish without consuming a separate deadline.
+		_, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", command, discordgo.WithContext(b.currentContext()))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("/%s: %w", command.Name, err))
 		}
