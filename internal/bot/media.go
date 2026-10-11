@@ -257,7 +257,8 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	tools = append(tools, b.reminderTools(message)...)
 	answer, err := b.llm.Ask(ctx, llm.Request{
 		ChatID: message.Chat.ID, UserName: userName, Text: text,
-		Images: images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,
+		ReplyContext: replyContext(message),
+		Images:       images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,
 	})
 	if err != nil {
 		b.state.LLMErrors.Add(1)

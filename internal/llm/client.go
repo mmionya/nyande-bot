@@ -31,13 +31,14 @@ type Image struct {
 }
 
 type Request struct {
-	ChatID      int64
-	UserName    string
-	Text        string
-	Images      []Image
-	Transcripts []string
-	Memories    []Memory
-	Tools       []Tool
+	ChatID       int64
+	UserName     string
+	Text         string
+	ReplyContext string // Request-only quoted context; excluded from conversation history.
+	Images       []Image
+	Transcripts  []string
+	Memories     []Memory
+	Tools        []Tool
 }
 
 type Memory struct {
@@ -169,9 +170,13 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 		}
 	}
 
-	var content any = userText
+	requestText := userText
+	if request.ReplyContext != "" {
+		requestText += "\n\n" + request.ReplyContext
+	}
+	var content any = requestText
 	if len(request.Images) > 0 {
-		parts := []map[string]any{{"type": "text", "text": userText}}
+		parts := []map[string]any{{"type": "text", "text": requestText}}
 		for _, image := range request.Images {
 			if len(image.Data) == 0 {
 				continue
