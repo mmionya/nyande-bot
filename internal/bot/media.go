@@ -77,15 +77,6 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 	log.Printf(resources.Get("telegram.log.media_send_started"), message.Chat.ID, message.MessageID, len(result.Items))
 	_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID, resources.Get("downloader.status.sending"), nil)
 	sent, sendErr := b.sendDownloadedMedia(ctx, message, result)
-	if len(sent) > 0 {
-		attachments := make([]cachedAttachment, 0, len(sent))
-		for _, item := range result.Items[:min(len(sent), len(result.Items))] {
-			attachments = append(attachments, cachedAttachment{
-				Kind: item.Kind, Name: item.Name, MIME: item.MIME, Data: item.Data,
-			})
-		}
-		b.media.Put(message.Chat.ID, sent, attachments)
-	}
 	if sendErr != nil {
 		b.state.MediaErrors.Add(1)
 		log.Printf(resources.Get("telegram.log.media_send_failed"), message.Chat.ID, message.MessageID, len(sent), len(result.Items), time.Since(sendStarted).Milliseconds(), sendErr)
@@ -100,7 +91,9 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 
 func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message, result downloader.Result) ([]telegram.Message, error) {
 	uploads := make([]telegram.Upload, 0, len(result.Items))
+	attachments := make([]cachedAttachment, len(result.Items))
 	for index, item := range result.Items {
+		attachments[index] = cachedAttachment{Kind: item.Kind, Name: item.Name, MIME: item.MIME, Data: item.Data}
 		caption := ""
 		if index == 0 {
 			caption = result.Caption
@@ -124,6 +117,10 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 			messages, err := b.telegram.SendMediaGroup(ctx, message.Chat.ID, chunk, message.MessageID)
 			if err == nil {
 				sent = append(sent, messages...)
+				// Replies can arrive while later batches are still uploading.
+				if b.media != nil {
+					b.media.Put(message.Chat.ID, messages, attachments[start:end])
+				}
 				start = end
 				continue
 			}
@@ -139,6 +136,9 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 			return sent, err
 		}
 		sent = append(sent, sentMessage)
+		if b.media != nil {
+			b.media.Put(message.Chat.ID, []telegram.Message{sentMessage}, attachments[start:start+1])
+		}
 		start++
 	}
 	return sent, nil

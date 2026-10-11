@@ -22,6 +22,8 @@ func (b *Bot) handleLinkPermissionCommand(ctx context.Context, message *telegram
 	if !ok || (command != "permitlinks" && command != "revokelinks") {
 		return false, nil
 	}
+	unlockMedia := b.lockUpdates(message.Chat.ID, true)
+	defer unlockMedia()
 	admin, err := b.isAdmin(ctx, message)
 	if err != nil {
 		return true, fmt.Errorf(resources.Get("telegram.error.check_link_admin"), err)

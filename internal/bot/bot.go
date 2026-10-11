@@ -188,6 +188,8 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 
 	var offset int64
+	// ponytail: 24 shared workers bound resource use; separate worker pools
+	// are needed if queued LLM requests regularly exhaust this capacity.
 	semaphore := make(chan struct{}, 24)
 	for {
 		updates, err := b.telegram.GetUpdates(ctx, offset)
@@ -220,15 +222,22 @@ func (b *Bot) Run(ctx context.Context) error {
 
 func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	var chatID int64
+	var text string
 	switch {
 	case update.Message != nil:
 		chatID = update.Message.Chat.ID
+		text = strings.TrimSpace(update.Message.ContentText())
 	case update.EditedMessage != nil:
 		chatID = update.EditedMessage.Chat.ID
 	case update.CallbackQuery != nil && update.CallbackQuery.Message != nil:
 		chatID = update.CallbackQuery.Message.Chat.ID
 	}
-	unlock := b.lockUpdates(chatID)
+	// Match the supported-link branch in handleMessage. Commands and links
+	// that may reach the LLM stay serialized with the conversation and /reset.
+	mediaUpdate := update.Message != nil &&
+		!strings.HasPrefix(text, "/") && text != silentModerationTrigger &&
+		len(supportedURLs(extractURLs(update.Message))) > 0
+	unlock := b.lockUpdates(chatID, mediaUpdate)
 	defer unlock()
 
 	if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
@@ -278,6 +287,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			if b.linkConfig == nil {
 				return errors.New(resources.Get("telegram.error.link_settings_unavailable"))
 			}
+			unlockMedia := b.lockUpdates(message.Chat.ID, true)
+			defer unlockMedia()
 			if err := b.linkConfig.EnableSilent(message.Chat.ID); err != nil {
 				return err
 			}
@@ -313,6 +324,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		b.state.CommandsUsed.Add(1)
 		switch command {
 		case "botban", "botunban":
+			unlockMedia := b.lockUpdates(message.Chat.ID, true)
+			defer unlockMedia()
 			return b.botBanCommand(ctx, message, command, arguments)
 		case "start":
 			_, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("bot.start"), message.MessageID, nil)
@@ -635,16 +648,21 @@ func (b *Bot) reminderLoop(ctx context.Context) {
 	}
 }
 
-// Serialize activation with updates and scheduled sends in the same chat.
-func (b *Bot) lockUpdates(chatID int64) func() {
-	value, _ := b.updateLocks.LoadOrStore(chatID, &sync.Mutex{})
+// Serialize downloads separately from conversation updates in each chat.
+// Silent activation, bans and link permissions take both, normal then media.
+func (b *Bot) lockUpdates(chatID int64, media bool) func() {
+	key := struct {
+		chatID int64
+		media  bool
+	}{chatID, media}
+	value, _ := b.updateLocks.LoadOrStore(key, &sync.Mutex{})
 	lock := value.(*sync.Mutex)
 	lock.Lock()
 	return lock.Unlock
 }
 
 func (b *Bot) deliverReminder(ctx context.Context, r reminders.Reminder) {
-	unlock := b.lockUpdates(r.ChatID)
+	unlock := b.lockUpdates(r.ChatID, false)
 	defer unlock()
 	if b.silentModeration(r.ChatID) || b.access.IsBanned(strconv.FormatInt(r.UserID, 10)) {
 		if err := b.reminders.MarkCompleted(ctx, r.ID); err != nil {
