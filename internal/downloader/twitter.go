@@ -88,6 +88,9 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 			return Result{}, err
 		}
 		items = append(items, item)
+		if len(items) >= d.cfg.MaxMediaItems {
+			break
+		}
 	}
 	if len(items) == 0 {
 		return Result{}, errors.New(resources.Get("downloader.error.fxtwitter_returned_no_trusted_media"))

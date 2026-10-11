@@ -99,6 +99,9 @@ func (d *Downloader) Download(ctx context.Context, rawURL string) (Result, error
 			result.Caption = truncateCaption(result.Caption)
 			return result, nil
 		}
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 		if !retryable(err) {
 			break
 		}
@@ -201,9 +204,6 @@ func isKnownMediaHost(host string) bool {
 }
 
 func (d *Downloader) downloadDirect(ctx context.Context, value *url.URL) (Result, error) {
-	if !isPublicURL(value) {
-		return Result{}, errors.New(resources.Get("downloader.error.direct_media_url_resolves_to_a_private_address"))
-	}
 	item, err := d.fetchMedia(ctx, value.String(), "")
 	if err != nil {
 		return Result{}, err
@@ -216,8 +216,11 @@ func (d *Downloader) fetchMedia(ctx context.Context, rawURL, expectedKind string
 }
 
 func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expectedKind, referer string) (Media, error) {
+	if err := ctx.Err(); err != nil {
+		return Media{}, err
+	}
 	parsed, err := url.Parse(rawURL)
-	if err != nil || !isPublicURL(parsed) {
+	if err != nil || !isPublicURL(ctx, parsed) {
 		return Media{}, errors.New(resources.Get("downloader.error.media_url_does_not_resolve_to_a_public_address"))
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -232,7 +235,7 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	// their response: media links may originate in untrusted search results.
 	client := *d.client
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
-		if !isPublicURL(next.URL) {
+		if !isPublicURL(ctx, next.URL) {
 			return errors.New(resources.Get("downloader.error.media_redirected_to_a_non_public_address"))
 		}
 		if d.client.CheckRedirect != nil {
@@ -248,7 +251,7 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 		return Media{}, err
 	}
 	defer response.Body.Close()
-	if !isPublicURL(response.Request.URL) {
+	if !isPublicURL(ctx, response.Request.URL) {
 		return Media{}, errors.New(resources.Get("downloader.error.media_redirected_to_a_non_public_address"))
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -337,17 +340,21 @@ func filenameFromURL(value *url.URL, contentType string) string {
 	return name
 }
 
-func isPublicURL(value *url.URL) bool {
+func isPublicURL(ctx context.Context, value *url.URL) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	host := value.Hostname()
 	if host == "localhost" || strings.HasSuffix(host, ".local") {
 		return false
 	}
-	addresses, err := net.LookupIP(host)
-	if err != nil {
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil || len(addresses) == 0 {
 		return false
 	}
 	for _, address := range addresses {
-		if address.IsLoopback() || address.IsPrivate() || address.IsUnspecified() || address.IsMulticast() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() {
+		ip := address.IP
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			return false
 		}
 	}

@@ -439,7 +439,6 @@
   "downloader.error.redirected_to_unsupported_url_scheme": "redirected to unsupported URL scheme",
   "downloader.error.unsupported_media_url": "unsupported media URL",
   "downloader.error.invalid_http_url": "invalid HTTP URL",
-  "downloader.error.direct_media_url_resolves_to_a_private_address": "direct media URL resolves to a private address",
   "downloader.error.media_url_does_not_resolve_to_a_public_address": "media URL does not resolve to a public address",
   "downloader.error.media_redirected_to_a_non_public_address": "media redirected to a non-public address",
   "downloader.error.media_http": "media HTTP %d",

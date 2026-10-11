@@ -85,6 +85,9 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 			return Result{}, err
 		}
 		items = append(items, item)
+		if len(items) >= d.cfg.MaxMediaItems {
+			break
+		}
 	}
 	if len(items) == 0 {
 		return Result{}, errors.New(resources.Get("downloader.error.tikwm_returned_no_valid_media_urls"))

@@ -216,7 +216,7 @@ func TestInstagramMediaHostsIncludeApifyProxy(t *testing.T) {
 
 func TestInstagramPagesDownloadBeforeTryingFallback(t *testing.T) {
 	value, _ := url.Parse("https://www.instagram.com/reel/ABC123/")
-	if !isPublicURL(value) {
+	if !isPublicURL(context.Background(), value) {
 		t.Skip("public Instagram DNS unavailable; HTTP requests are mocked")
 	}
 	for _, test := range []struct {
@@ -261,7 +261,7 @@ func TestInstagramPagesDownloadBeforeTryingFallback(t *testing.T) {
 
 func TestInstagramVXFallback(t *testing.T) {
 	for _, host := range []string{"vxinstagram.com", "d.rapidcdn.app", "dl.snapcdn.app", "example.com"} {
-		if !isPublicURL(&url.URL{Scheme: "https", Host: host}) {
+		if !isPublicURL(context.Background(), &url.URL{Scheme: "https", Host: host}) {
 			t.Skipf("public DNS unavailable for %s; HTTP requests in this test are mocked", host)
 		}
 	}

@@ -3,9 +3,15 @@ package downloader
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/url"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/mmionya/nyande-bot/internal/config"
 )
 
 func TestResolveRedditGalleryURL(t *testing.T) {
@@ -30,6 +36,64 @@ func TestResolveRedditGalleryURL(t *testing.T) {
 				t.Fatal("resolution modified the input URL")
 			}
 		})
+	}
+}
+
+func TestRedditDirectMediaSkipsPageExtraction(t *testing.T) {
+	if !isPublicURL(context.Background(), &url.URL{Scheme: "https", Host: "i.redd.it"}) {
+		t.Skip("public Reddit DNS unavailable; HTTP requests are mocked")
+	}
+	for _, test := range []struct{ extension, contentType, kind string }{
+		{"jpg", "image/jpeg", "photo"},
+		{"gif", "image/gif", "animation"},
+		{"mp4", "video/mp4", "video"},
+	} {
+		t.Run(test.extension, func(t *testing.T) {
+			d := New(config.Config{MaxFileSize: 1024, MaxMediaItems: 1, RetryAttempts: 1, YTDownloadPath: filepath.Join(t.TempDir(), "missing-yt-dlp")})
+			calls := 0
+			path := "/original." + test.extension
+			d.client.Transport = mediaRedirectTransport(func(request *http.Request) (*http.Response, error) {
+				calls++
+				if request.Method != http.MethodGet || request.URL.Path != path {
+					t.Fatalf("direct media must need only its GET, got %s %s", request.Method, request.URL)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {test.contentType}}, Body: io.NopCloser(strings.NewReader("media")), Request: request}, nil
+			})
+			result, err := d.Download(context.Background(), "https://i.redd.it"+path)
+			if err != nil || calls != 1 || result.Source != "reddit" || len(result.Items) != 1 || result.Items[0].Kind != test.kind {
+				t.Fatalf("result=%+v calls=%d err=%v", result, calls, err)
+			}
+		})
+	}
+}
+
+func TestRedditGalleryStopsAtSuccessfulMediaLimit(t *testing.T) {
+	if !isPublicURL(context.Background(), &url.URL{Scheme: "https", Host: "i.redd.it"}) {
+		t.Skip("public Reddit DNS unavailable; HTTP requests are mocked")
+	}
+	d := New(config.Config{MaxFileSize: 1024, MaxMediaItems: 2, RetryAttempts: 1, YTDownloadPath: filepath.Join(t.TempDir(), "missing-yt-dlp")})
+	var paths []string
+	d.client.Transport = mediaRedirectTransport(func(request *http.Request) (*http.Response, error) {
+		paths = append(paths, request.URL.Path)
+		status, contentType, body := http.StatusOK, "image/jpeg", "jpg"
+		switch request.URL.Path {
+		case "/comments/abc.json":
+			contentType = "application/json"
+			body = `[{"data":{"children":[{"data":{"title":"Gallery caption","gallery_data":{"items":[{"media_id":"a"},{"media_id":"b"},{"media_id":"c"},{"media_id":"d"}]},"media_metadata":{"a":{"s":{"u":"https://i.redd.it/a.jpg"}},"b":{"s":{"u":"https://i.redd.it/b.jpg"}},"c":{"s":{"u":"https://i.redd.it/c.jpg"}},"d":{"s":{"u":"https://i.redd.it/d.jpg"}}}}}]}}]`
+		case "/b.jpg":
+			status = http.StatusForbidden
+		case "/a.jpg", "/c.jpg":
+		default:
+			t.Fatalf("unnecessary media request: %s", request.URL)
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+	})
+	result, err := d.Download(context.Background(), "https://www.reddit.com/gallery/abc/")
+	if err != nil || result.Source != "reddit" || result.Caption != "Gallery caption" || len(result.Items) != 2 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if !slices.Equal(paths, []string{"/comments/abc.json", "/a.jpg", "/b.jpg", "/c.jpg"}) || result.Items[0].Name != "a.jpg" || result.Items[1].Name != "c.jpg" {
+		t.Fatalf("gallery limit must preserve successful item order: paths=%v items=%+v", paths, result.Items)
 	}
 }
 

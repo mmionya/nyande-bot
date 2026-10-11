@@ -104,11 +104,32 @@ func (d *Downloader) resolvePinterestURL(ctx context.Context, value *url.URL) (*
 	}
 	request.Header.Set("User-Agent", browserUserAgent)
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
-	response, err := d.client.Do(request)
+	client := *d.client
+	var pinURL *url.URL
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if d.client.CheckRedirect != nil {
+			if err := d.client.CheckRedirect(next, via); err != nil {
+				return err
+			}
+		} else if len(via) >= 10 {
+			return errors.New(resources.Get("telegram.error.too_many_redirects"))
+		}
+		// The pin ID is enough for the API; fetching its HTML adds no media data.
+		if (next.URL.Scheme == "https" || next.URL.Scheme == "http") &&
+			IsPinterest(next.URL) && !hostMatches(next.URL.Hostname(), "pin.it") && pinterestPinID(next.URL) != "" {
+			pinURL = next.URL
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return value, err
 	}
 	defer response.Body.Close()
+	if pinURL != nil {
+		return pinURL, nil
+	}
 	resolved := response.Request.URL
 	if !IsPinterest(resolved) || hostMatches(resolved.Hostname(), "pin.it") {
 		return value, errors.New(resources.Get("downloader.error.pinterest_short_link_redirected_outside_pinterest"))

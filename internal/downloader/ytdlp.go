@@ -38,7 +38,7 @@ func (d *Downloader) downloadYTDLPWithOptions(ctx context.Context, value *url.UR
 			break
 		}
 	}
-	if sizeErr != nil && errors.Is(lastErr, errYTDLPNoMedia) {
+	if sizeErr != nil && (errors.Is(lastErr, errYTDLPNoMedia) || strings.Contains(strings.ToLower(lastErr.Error()), "requested format is not available")) {
 		return Result{}, sizeErr
 	}
 	return Result{}, lastErr
@@ -215,11 +215,9 @@ func youtubeMediaFormat(height int) string {
 }
 
 func youtubeFormatFallbackError(err error) bool {
-	if errors.Is(err, errYTDLPMediaTooLarge) || errors.Is(err, errYTDLPNoMedia) {
-		return true
-	}
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "requested format is not available")
+	// Lower height selectors are subsets of the first: unavailable formats
+	// cannot become available by lowering the ceiling.
+	return errors.Is(err, errYTDLPMediaTooLarge)
 }
 
 func ytdlpSizeLimitOutput(value string) bool {

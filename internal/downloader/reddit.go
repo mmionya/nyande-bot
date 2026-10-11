@@ -16,6 +16,11 @@ import (
 )
 
 func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result, error) {
+	if hostMatches(value.Hostname(), "redd.it") && isDirectMedia(value) {
+		result, err := d.downloadDirect(ctx, value)
+		result.Source = "reddit"
+		return result, err
+	}
 	resolved, err := d.resolveRedditURL(ctx, value)
 	if err != nil {
 		return d.downloadYTDLP(ctx, value)
@@ -45,6 +50,9 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 					if len(imageURLs) > 0 {
 						items := make([]Media, 0, len(imageURLs))
 						for _, imageURL := range imageURLs {
+							if len(items) >= d.cfg.MaxMediaItems {
+								break
+							}
 							item, downloadErr := d.fetchMedia(ctx, imageURL, "photo")
 							if downloadErr != nil {
 								continue

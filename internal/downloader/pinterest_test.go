@@ -1,9 +1,89 @@
 package downloader
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/mmionya/nyande-bot/internal/config"
 )
+
+func TestPinterestShortLinkSkipsUnusedPinPage(t *testing.T) {
+	const pinURL = "https://www.pinterest.com/pin/123/"
+	for _, intermediate := range []string{"", "https://api.pinterest.com/url_shortener/example/redirect/"} {
+		t.Run(intermediate, func(t *testing.T) {
+			d := New(config.Config{})
+			requests := 0
+			d.client.Transport = mediaRedirectTransport(func(request *http.Request) (*http.Response, error) {
+				requests++
+				if request.URL.String() == pinURL {
+					t.Fatal("pin HTML must not be requested before using the API")
+				}
+				target := pinURL
+				if requests == 1 && intermediate != "" {
+					target = intermediate
+				}
+				return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {target}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+			})
+			shortURL, _ := url.Parse("https://pin.it/example")
+			resolved, err := d.resolvePinterestURL(context.Background(), shortURL)
+			wantRequests := 1
+			if intermediate != "" {
+				wantRequests++
+			}
+			if err != nil || resolved.String() != pinURL || requests != wantRequests {
+				t.Fatalf("resolved=%v err=%v requests=%d, want %s in %d requests", resolved, err, requests, pinURL, wantRequests)
+			}
+		})
+	}
+}
+
+func TestPinterestShortLinkPreservesFailures(t *testing.T) {
+	policyErr := errors.New("redirect policy rejected target")
+	for _, test := range []struct {
+		name   string
+		target string
+		status int
+		policy bool
+	}{
+		{name: "HTTP failure", status: http.StatusForbidden},
+		{name: "outside Pinterest", status: http.StatusFound, target: "https://example.com/pin/123/"},
+		{name: "redirect policy", status: http.StatusFound, target: "https://www.pinterest.com/pin/123/", policy: true},
+		{name: "redirect limit", status: http.StatusFound, target: "https://pin.it/loop"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			d := New(config.Config{})
+			if test.policy {
+				d.client.CheckRedirect = func(*http.Request, []*http.Request) error { return policyErr }
+			}
+			requests := 0
+			d.client.Transport = mediaRedirectTransport(func(request *http.Request) (*http.Response, error) {
+				requests++
+				status := test.status
+				if request.URL.Hostname() == "example.com" {
+					status = http.StatusOK
+				}
+				return &http.Response{StatusCode: status, Header: http.Header{"Location": {test.target}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+			})
+			shortURL, _ := url.Parse("https://pin.it/example")
+			_, err := d.resolvePinterestURL(context.Background(), shortURL)
+			if err == nil {
+				t.Fatal("expected redirect or HTTP failure")
+			}
+			if test.policy && (!errors.Is(err, policyErr) || requests != 1) {
+				t.Fatalf("policy must run before accepting a pin: err=%v requests=%d", err, requests)
+			}
+			if requests > 6 {
+				t.Fatalf("redirect limit was ignored: %d requests", requests)
+			}
+		})
+	}
+}
 
 func TestPinterestPinFromResponseAndImage(t *testing.T) {
 	pin, err := pinterestPinFromResponse([]byte(`{

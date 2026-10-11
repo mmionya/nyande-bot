@@ -219,18 +219,18 @@ func TestYouTubeFormatDoesNotExceedHeight(t *testing.T) {
 	}
 }
 
-func TestYouTubeFormatFallbackOnlyHandlesFormatAndSizeFailures(t *testing.T) {
+func TestYouTubeFormatFallbackOnlyHandlesSizeFailures(t *testing.T) {
+	if !youtubeFormatFallbackError(errYTDLPMediaTooLarge) {
+		t.Fatal("oversized videos must fall back to a lower resolution")
+	}
 	for _, err := range []error{
 		errYTDLPNoMedia,
-		errYTDLPMediaTooLarge,
 		errors.New("yt-dlp failed: requested format is not available"),
+		errors.New("yt-dlp failed: video unavailable"),
 	} {
-		if !youtubeFormatFallbackError(err) {
-			t.Fatalf("expected fallback for %v", err)
+		if youtubeFormatFallbackError(err) {
+			t.Fatalf("unavailable formats must not retry with a stricter selector: %v", err)
 		}
-	}
-	if youtubeFormatFallbackError(errors.New("yt-dlp failed: video unavailable")) {
-		t.Fatal("permanent source errors must not trigger every format fallback")
 	}
 }
 
