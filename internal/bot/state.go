@@ -88,15 +88,16 @@ func (c *mediaCache) Put(chatID int64, messages []telegram.Message, attachments 
 	if len(messages) == 0 || len(attachments) == 0 {
 		return
 	}
-	copied := cloneAttachments(attachments)
+	copied := cloneAttachments(attachments[:min(len(messages), len(attachments))])
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, message := range messages {
+	// Deliveries retain the attachment order, including a partially sent album.
+	for index, message := range messages[:len(copied)] {
 		key := mediaKey{ChatID: chatID, MessageID: message.MessageID}
 		if _, exists := c.items[key]; !exists {
 			c.order = append(c.order, key)
 		}
-		c.items[key] = copied
+		c.items[key] = []cachedAttachment{copied[index]}
 	}
 	for len(c.order) > c.maximum {
 		key := c.order[0]
