@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -113,6 +114,10 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 			continue
 		}
 		kind := kindFromExtension(entry.Name())
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case ".heic", ".heif", ".avif":
+			kind = "photo"
+		}
 		if kind == "" {
 			continue
 		}
@@ -131,7 +136,20 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 		if err != nil {
 			return Result{}, err
 		}
-		items = append(items, Media{Kind: kind, Name: entry.Name(), MIME: mimeForName(entry.Name()), Data: data})
+		name, contentType := entry.Name(), mimeForName(entry.Name())
+		if kind == "photo" {
+			// Instagram can serve JPEG bytes from a signed URL ending in .heic.
+			// Use the actual format without modifying the signed download URL.
+			contentType = http.DetectContentType(data)
+			extension := map[string]string{
+				"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+			}[contentType]
+			if extension == "" {
+				return Result{}, fmt.Errorf("yt-dlp downloaded an unsupported photo format %q", contentType)
+			}
+			name = strings.TrimSuffix(name, filepath.Ext(name)) + extension
+		}
+		items = append(items, Media{Kind: kind, Name: name, MIME: contentType, Data: data})
 	}
 	if len(items) == 0 {
 		if oversizedMedia || ytdlpSizeLimitOutput(string(outputData)) {

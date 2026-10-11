@@ -10,7 +10,9 @@ class InstagramPhotosIE(InstagramIE, plugin_name="nyande"):
             # revisit selection if the API stops ordering candidates by quality.
             photos = [
                 photo for photo in reversed(info["thumbnails"])
-                if determine_ext(photo["url"], "jpg") in ("jpg", "jpeg", "png", "webp")
+                if determine_ext(photo["url"], "jpg") in (
+                    "jpg", "jpeg", "png", "webp", "heic", "heif", "avif",
+                )
             ]
             if photos:
                 photo = max(photos, key=lambda item: (

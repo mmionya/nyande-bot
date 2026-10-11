@@ -68,6 +68,22 @@ with YoutubeDL({
     assert [entry["formats"][0]["url"] for entry in carousel["entries"]] == [
         "https://example.org/large.jpg", "https://example.org/video.mp4", "https://example.org/last.jpg",
     ]
+    # Instagram serves JPEG bytes at .heic URLs; Go checks downloaded bytes.
+    image_extensions = ("heic", "heif", "avif")
+    carousel = extractor._extract_product({"carousel_media": [{
+        **product,
+        "pk": str(1000000000000000001 + index),
+        "original_width": 1440,
+        "original_height": 1800,
+        "image_versions2": {"candidates": [
+            {"url": f"https://example.org/{index}.{ext}?size=original"},
+            {"url": f"https://example.org/{index}.{ext}?size=150"},
+        ]},
+    } for index, ext in enumerate(image_extensions)]}, get_comments=False)
+    for index, (entry, ext) in enumerate(zip(carousel["entries"], image_extensions, strict=True)):
+        selected = ydl.process_ie_result({**entry, "title": "photo"}, download=False)
+        assert selected["url"] == f"https://example.org/{index}.{ext}?size=original"
+        assert selected["ext"] == ext
     for candidates in ([], [{"url": "https://example.org/invalid.mp4"}], [{"url": "invalid"}]):
         assert not extractor._extract_product_media({
             **product, "image_versions2": {"candidates": candidates},

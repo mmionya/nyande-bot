@@ -1,12 +1,17 @@
 package downloader
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -14,6 +19,59 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/config"
 )
+
+func TestInstagramDownloadsJPEGAtHEICURLs(t *testing.T) {
+	var photo bytes.Buffer
+	if err := jpeg.Encode(&photo, image.NewRGBA(image.Rect(0, 0, 2, 2)), nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []bool{false, true} {
+		t.Run(fmt.Sprint("invalid=", invalid), func(t *testing.T) {
+			directory := t.TempDir()
+			data := photo.Bytes()
+			if invalid {
+				data = []byte("<html>Login required</html>")
+			}
+			if err := os.WriteFile(filepath.Join(directory, "photo"), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			script := filepath.Join(directory, "yt-dlp")
+			if err := os.WriteFile(script, []byte(`#!/bin/sh
+set -eu
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = --output ]; then
+        directory=${2%/*}
+        cp "${0%/*}/photo" "$directory/00002-second.heic"
+        cp "${0%/*}/photo" "$directory/00001-first.heic"
+        exit 0
+    fi
+    shift
+done
+exit 1
+`), 0700); err != nil {
+				t.Fatal(err)
+			}
+			d := New(config.Config{YTDownloadPath: script, MaxFileSize: 1024 * 1024, MaxMediaItems: 10})
+			value, _ := url.Parse("https://www.instagram.com/p/example/")
+			result, err := d.downloadYTDLPWithOptions(context.Background(), value, true)
+			if invalid {
+				if err == nil || len(result.Items) != 0 {
+					t.Fatal("non-image contents must not be delivered as a photo")
+				}
+				return
+			}
+			if err != nil || len(result.Items) != 2 {
+				t.Fatalf("expected both carousel photos: items=%d err=%v", len(result.Items), err)
+			}
+			for index, name := range []string{"00001-first.jpg", "00002-second.jpg"} {
+				item := result.Items[index]
+				if item.Name != name || item.Kind != "photo" || item.MIME != "image/jpeg" || !bytes.Equal(item.Data, data) {
+					t.Fatalf("unexpected photo %d: name=%q kind=%q MIME=%q bytes=%d", index, item.Name, item.Kind, item.MIME, len(item.Data))
+				}
+			}
+		})
+	}
+}
 
 func TestInstagramPageMediaExtractsEscapedCarouselImages(t *testing.T) {
 	page := `<meta content="A photo caption &amp; more" property="og:description">
