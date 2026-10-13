@@ -347,8 +347,19 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 
 func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 	attachments, err := b.collectLLMAttachments(ctx, message)
-	if err != nil {
-		logError(resources.Get("telegram.log_context.gif_attachments"), err)
+	if err := b.sendGIF(ctx, message, attachments, err); err != nil {
+		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, err.Error(), message.MessageID, nil)
+		return errors.Join(err, sendErr)
+	}
+	return nil
+}
+
+func (b *Bot) sendGIF(ctx context.Context, message *telegram.Message, attachments []cachedAttachment, attachmentErr error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if attachmentErr != nil {
+		logError(resources.Get("telegram.log_context.gif_attachments"), attachmentErr)
 	}
 	var target *cachedAttachment
 	for i := range attachments {
@@ -358,24 +369,18 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 		}
 	}
 	if target == nil {
-		if err != nil && isFileTooBig(err) {
-			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				resources.Get("telegram.media.video_too_large"),
-				message.MessageID, nil)
-			return sendErr
+		if attachmentErr != nil {
+			if isFileTooBig(attachmentErr) {
+				return errors.New(resources.Get("telegram.media.video_too_large"))
+			}
+			return attachmentErr
 		}
-		_, err := b.telegram.SendMessage(ctx, message.Chat.ID,
-			resources.Get("telegram.gif.usage"),
-			message.MessageID, nil)
-		return err
+		return errors.New(resources.Get("telegram.gif.usage"))
 	}
 
 	gifData, err := convertVideoToGIF(ctx, target.Data, target.Name)
 	if err != nil {
-		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf(resources.Get("telegram.gif.convert_failed"), err),
-			message.MessageID, nil)
-		return sendErr
+		return fmt.Errorf(resources.Get("telegram.gif.convert_failed"), err)
 	}
 
 	if _, err = b.telegram.SendUpload(ctx, message.Chat.ID, telegram.Upload{
@@ -384,10 +389,7 @@ func (b *Bot) gifCommand(ctx context.Context, message *telegram.Message) error {
 		MIME: "video/mp4",
 		Data: gifData,
 	}, message.MessageID); err != nil {
-		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-			fmt.Sprintf(resources.Get("telegram.gif.send_failed"), err),
-			message.MessageID, nil)
-		return errors.Join(err, sendErr)
+		return fmt.Errorf(resources.Get("telegram.gif.send_failed"), err)
 	}
 	return nil
 }

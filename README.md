@@ -437,6 +437,12 @@ three-minute timeout; repeated calls for the same URL in one request do not send
 duplicate files. Failures and partial deliveries are reported back to the model.
 Availability still depends on the source site and downloader configuration.
 
+To convert an attached video or a video you reply to, ask “Make this into a GIF.”
+The Telegram LLM can call `convert_to_gif`, which uses the same conversion as
+`/gif` and sends a silent MP4 animation. It reuses the current request's collected
+attachments and attempts conversion once per request, including failed deliveries.
+In groups, include an `LLM_TRIGGER_WORDS` trigger when replying to media the bot sent.
+
 ## Create files with the LLM
 
 In Telegram, ask “Write a Python script to sort a CSV and send it as a file”

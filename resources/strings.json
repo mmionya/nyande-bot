@@ -931,5 +931,9 @@
   "telegram.tomato.gif": "GIF",
   "music.modal.title": "Поиск · {source}",
   "music.search.title": "Треки по запросу «{query}»",
-  "downloader.log.instagram_stage": "[download] source=instagram method=%s elapsed_ms=%d success=%t"
+  "downloader.log.instagram_stage": "[download] source=instagram method=%s elapsed_ms=%d success=%t",
+  "tool.convert_to_gif.description": "Convert the first video, animation or round video attached to the current user message or its replied-to message into a silent Telegram GIF animation, using the same conversion as /gif, and send it in the current chat. Use when the user asks to make a GIF. Uses attachments already collected for this request; does not accept URLs, file paths or message IDs.",
+  "tool.convert_to_gif.sent": "Successfully sent the converted GIF animation to the current chat in reply to the user's message. Briefly acknowledge delivery.",
+  "tool.convert_to_gif.failed": "GIF conversion or delivery failed: {error}. Do not claim it was sent or retry this conversion during this request. If the video is missing, ask the user to attach one or reply to it.",
+  "tool.convert_to_gif.already_attempted": "GIF conversion was already attempted for this request; no animation was sent again. Previous outcome: {outcome}"
 }
