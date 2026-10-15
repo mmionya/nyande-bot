@@ -72,6 +72,8 @@ func TestRetryableYTDLPFailures(t *testing.T) {
 func TestSupportedPlatformsAndDirectMedia(t *testing.T) {
 	valid := []string{
 		"https://www.tiktok.com/@cat/video/123",
+		"https://www.tt.site/t/ZSgRvMXNu/",
+		"https://tt.site/t/ZSgRvMXNu/",
 		"https://www.instagram.com/reel/ABC123/",
 		"https://x.com/user/status/123",
 		"https://www.reddit.com/r/cats/comments/abc/title/",
@@ -85,6 +87,14 @@ func TestSupportedPlatformsAndDirectMedia(t *testing.T) {
 	for _, value := range valid {
 		if !Supported(value) {
 			t.Errorf("expected supported URL: %s", value)
+		}
+		if !AllowedHost(value) {
+			t.Errorf("expected allowed URL: %s", value)
+		}
+	}
+	for _, value := range []string{"https://tt.site.example.com/t/ZSgRvMXNu/", "https://nottt.site/t/ZSgRvMXNu/"} {
+		if Supported(value) || AllowedHost(value) {
+			t.Errorf("lookalike TikTok host must not be supported or allowed: %s", value)
 		}
 	}
 	if Supported("https://example.com/article") {

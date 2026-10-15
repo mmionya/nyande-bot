@@ -135,7 +135,7 @@ func AllowedHost(raw string) bool {
 }
 
 func IsTikTok(value *url.URL) bool {
-	return hostMatches(value.Hostname(), "tiktok.com", "vm.tiktok.com", "vt.tiktok.com")
+	return hostMatches(value.Hostname(), "tiktok.com", "vm.tiktok.com", "vt.tiktok.com", "tt.site")
 }
 
 func IsInstagram(value *url.URL) bool {

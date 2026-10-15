@@ -35,6 +35,12 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 	if err := d.waitTikTok(ctx); err != nil {
 		return Result{}, err
 	}
+	if hostMatches(value.Hostname(), "tt.site") {
+		// TikWM does not recognize tt.site, but TikTok accepts the same share path.
+		canonical := *value
+		canonical.Host = "www.tiktok.com"
+		value = &canonical
+	}
 	form := url.Values{"url": {value.String()}, "hd": {"1"}}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.tikwm.com/api/", strings.NewReader(form.Encode()))
 	if err != nil {
