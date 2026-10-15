@@ -18,3 +18,5 @@ dist/
 .nyande-quotes.db*
 
 .nyande-discord-llm.json*
+.nyande-schedules.db*
+.nyande-reminders.db*

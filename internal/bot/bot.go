@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/mmionya/nyande-bot/internal/memory"
 	"github.com/mmionya/nyande-bot/internal/quotes"
 	"github.com/mmionya/nyande-bot/internal/reminders"
+	"github.com/mmionya/nyande-bot/internal/schedules"
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	"github.com/mmionya/nyande-bot/resources"
 )
@@ -45,6 +47,7 @@ type Bot struct {
 	media      *mediaCache
 	chatlog    *chatlog.Store
 	reminders  *reminders.Store
+	schedules  *schedules.Store
 	quotes     *quotes.Store
 
 	updateLocks     sync.Map
@@ -115,6 +118,22 @@ func New(cfg config.Config) (*Bot, error) {
 		}
 		return nil, fmt.Errorf(resources.Get("telegram.error.open_quotes"), err)
 	}
+	schedulePath := cfg.ScheduleDBFile
+	if schedulePath == "" {
+		schedulePath = ".nyande-schedules.db"
+	}
+	scheduleStore, err := schedules.Open(schedulePath)
+	if err != nil {
+		_ = quoteStore.Close()
+		_ = remindersStore.Close()
+		if memories != nil {
+			_ = memories.Close()
+		}
+		if chatlogStore != nil {
+			_ = chatlogStore.Close()
+		}
+		return nil, fmt.Errorf(resources.Get("schedule.error.open"), err)
+	}
 	return &Bot{
 		cfg: cfg, access: users, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
 		llm: llm.New(cfg), memories: memories, chatlog: chatlogStore, reminders: remindersStore, state: NewState(), allowlist: allowed, linkConfig: linkConfig, media: newMediaCache(512),
@@ -123,11 +142,17 @@ func New(cfg config.Config) (*Bot, error) {
 		checkers: make(map[int64]*checkersGame), checkersPending: make(map[int64][2]int64),
 		wordleGames: make(map[wordleKey]*wordleGame),
 		quotes:      quoteStore,
+		schedules:   scheduleStore,
 	}, nil
 }
 
 func (b *Bot) Close() error {
 	var errs []error
+	if b.schedules != nil {
+		if err := b.schedules.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if b.quotes != nil {
 		if err := b.quotes.Close(); err != nil {
 			errs = append(errs, err)
@@ -159,8 +184,10 @@ func (b *Bot) Run(ctx context.Context) error {
 	b.identity = identity
 	log.Printf(resources.Get("telegram.log.started"), identity.Username, identity.ID, b.cfg.String())
 	go b.reminderLoop(ctx)
+	go b.scheduleLoop(ctx)
 	commands := []map[string]string{
 		{"command": "help", "description": resources.Get("telegram.command.help")},
+		{"command": "schedule", "description": resources.Get("telegram.command.schedule")},
 		{"command": "botban", "description": resources.Get("telegram.command.botban")},
 		{"command": "botunban", "description": resources.Get("telegram.command.botunban")},
 		{"command": "linkdelete", "description": resources.Get("telegram.command.linkdelete")},
@@ -237,6 +264,12 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	mediaUpdate := update.Message != nil &&
 		!strings.HasPrefix(text, "/") && text != silentModerationTrigger &&
 		len(supportedURLs(extractURLs(update.Message))) > 0
+	if mediaUpdate && b.schedules != nil && scheduleOwner(update.Message) {
+		_, draftErr := b.schedules.GetDraft(ctx, update.Message.From.ID, chatID)
+		if !errors.Is(draftErr, sql.ErrNoRows) {
+			mediaUpdate = false
+		}
+	}
 	unlock := b.lockUpdates(chatID, mediaUpdate)
 	defer unlock()
 
@@ -323,6 +356,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
+		case "schedule":
+			return b.scheduleCommand(ctx, message, arguments)
 		case "botban", "botunban":
 			unlockMedia := b.lockUpdates(message.Chat.ID, true)
 			defer unlockMedia()
@@ -385,6 +420,9 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		}
 	}
 
+	if handled, err := b.handleScheduleInput(ctx, message); handled {
+		return err
+	}
 	urls := extractURLs(message)
 	if len(urls) > 0 {
 		if err := b.handleLinks(ctx, message, urls, true); err != nil {
@@ -507,6 +545,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *telegram.CallbackQue
 		return nil
 	}
 	switch {
+	case strings.HasPrefix(callback.Data, "sch:"):
+		return b.handleScheduleCallback(ctx, callback)
 	case strings.HasPrefix(callback.Data, "donate:"):
 		return b.handleDonationCallback(ctx, callback)
 	case strings.HasPrefix(callback.Data, "ttt:") || strings.HasPrefix(callback.Data, "ttt_accept:"):

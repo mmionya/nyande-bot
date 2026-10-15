@@ -74,6 +74,7 @@ type Config struct {
 	ChatLogFile            string
 	ChatLogMaxPerChat      int
 	ReminderDBFile         string
+	ScheduleDBFile         string
 	QuoteDBFile            string
 	StorageEncryptionKey   []byte
 
@@ -145,6 +146,7 @@ func Load() (Config, error) {
 		ChatLogFile:            envString("CHAT_LOG_FILE", ".nyande-chatlog.db"),
 		ChatLogMaxPerChat:      envInt("CHAT_LOG_MAX_PER_CHAT", 50000, 100, 1000000),
 		ReminderDBFile:         envString("REMINDER_DB_FILE", ".nyande-reminders.db"),
+		ScheduleDBFile:         envString("SCHEDULE_DB_FILE", ".nyande-schedules.db"),
 		QuoteDBFile:            envString("QUOTE_DB_FILE", ".nyande-quotes.db"),
 
 		VideoCompressionEnabled: envBool("VIDEO_COMPRESSION_ENABLED", true),

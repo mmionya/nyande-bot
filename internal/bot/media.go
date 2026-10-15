@@ -265,6 +265,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	tools = append(tools, b.memoryTools(message)...)
 	tools = append(tools, b.chatlogTools(message)...)
 	tools = append(tools, b.reminderTools(message)...)
+	tools = append(tools, b.scheduleTools(message)...)
 	answer, err := b.llm.Ask(ctx, llm.Request{
 		ChatID: message.Chat.ID, UserName: userName, Text: text,
 		ReplyContext: replyContext(message),

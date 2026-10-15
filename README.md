@@ -20,11 +20,61 @@ original Python and Rust versions.
 - restores the entire cached album when a user replies to one of the files
   previously sent by the bot;
 - provides the LLM with `current_time` and optional `web_search` tools;
+- imports class timetables from screenshots or text and sends private Telegram
+  reminders, including alternating study weeks;
 - optionally deletes unsupported links posted by non-administrators in groups;
 - stores extra allowed domains added through `/allowlink example.com`;
 - persists each group's link-deletion setting across restarts;
 - accepts Telegram Stars and can display an optional Ko-fi button;
 - keeps process statistics and separate LLM history for every chat.
+
+## Class timetable reminders
+
+In a private Telegram chat, send `/schedule`, then upload timetable screenshots
+individually or in albums, or enter the timetable as text. Each recognition batch accepts up to
+12 images: 10 MiB per image and 20 MiB total. Add all screenshots before pressing
+**Распознать** (Recognize). Reply to clarification questions in ordinary text;
+check the recognized subjects, dates, times, classrooms, and timezone. Once all
+questions are resolved, a **10 / 30 / 60 minute** button confirms the timetable
+and selects how long before each class to send its reminder.
+
+Provide complete dates including the year. A dated class happens only on that
+date. For recurring classes, specify the inclusive start and end dates, up to
+366 days. For alternating weeks, also specify the cycle length and the Monday
+that begins **week 1**; week numbers do not use calendar-week parity. Upload each
+week's timetable or explicitly explain which classes recur every week. The bot
+does not copy week 1 into an absent week 2. Overlapping screenshots are merged,
+while consecutive classes stay separate. Review the displayed IANA timezone,
+for example `Asia/Almaty`, and correct it if necessary. The initial timezone comes
+from `LLM_TIMEZONE` when it is a valid IANA name, otherwise `Asia/Almaty`.
+
+| Command | Action |
+| --- | --- |
+| `/schedule` | Show the draft or active timetable; start setup if neither exists. |
+| `/schedule new` | Start a new draft. |
+| `/schedule edit` | Create an editable draft from the active timetable. |
+| `/schedule cancel` | Discard the draft and leave setup. |
+| `/schedule off` | Disable class reminders and discard the draft. |
+| `/schedule skip 2026-10-19 16:00` | Cancel one class reminder using its local date and start time. |
+
+The active timetable keeps working while a replacement is being prepared.
+Only confirmation replaces it. Reminder times that have already passed when
+confirming are skipped. Updates in the university's app are not imported
+automatically; send the changed timetable or describe the correction.
+
+Extraction requires `LLM_ENABLED=true` and a configured LLM. Screenshots also
+require `LLM_VISION_ENABLED=true` and a model that accepts images. The LLM can
+open the same wizard when explicitly asked to import a class timetable in
+natural language. It only extracts and revises the draft; deterministic code
+calculates dates and delivers confirmed reminders without further LLM calls.
+
+Drafts, active timetables, cancellations, and notification state survive
+restarts in SQLite at `SCHEDULE_DB_FILE` (default `.nyande-schedules.db`). Compose
+sets this to `/app/data/schedules.db` in the persistent `bot-data` volume.
+After downtime, a reminder is sent only if it is at most five minutes late and
+the class has not started. Each notification is consumed before sending to
+avoid duplicate delivery after a restart. A process crash or network failure
+can therefore cause a missed reminder; an uncertain send is not retried.
 
 ## Chat games
 
@@ -207,7 +257,7 @@ plaintext backups need separate encryption or removal; migration cannot erase
 copies in external snapshots or previously freed disk blocks.
 
 This option covers the message archive and short LLM history. Long-term facts,
-saved quotes and reminders use separate databases; protect their file permissions
+saved quotes, reminders, and class timetables use separate databases; protect their file permissions
 too. Encryption at rest does not hide data from the running bot or a server
 administrator with the key. Context needed to answer a request is still sent to
 the configured LLM provider.
