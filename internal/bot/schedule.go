@@ -144,14 +144,10 @@ func (b *Bot) handleScheduleInput(ctx context.Context, m *telegram.Message) (boo
 	if !ok {
 		return true, b.scheduleReply(ctx, m, resources.Get("schedule.input_hint"), nil)
 	}
-	ack := true
 	wasReview := d.Stage == "review"
 	for _, existing := range d.Inputs {
 		if existing.MessageID == input.MessageID || (input.FileID != "" && existing.FileID == input.FileID) {
 			return true, nil
-		}
-		if input.GroupID != "" && existing.GroupID == input.GroupID {
-			ack = false
 		}
 	}
 	// Plain text is retained as notes, without counting against the screenshot cap.
@@ -179,10 +175,26 @@ func (b *Bot) handleScheduleInput(ctx context.Context, m *telegram.Message) (boo
 	if wasReview && input.FileID == "" {
 		return true, b.recognizeSchedule(ctx, m, d)
 	}
-	if !ack {
-		return true, nil
+	return true, b.updateScheduleCollection(ctx, d)
+}
+
+func (b *Bot) updateScheduleCollection(ctx context.Context, d schedules.Draft) error {
+	text := resources.Format("schedule.collected", map[string]any{"count": len(d.Inputs)})
+	markup := scheduleCollectKeyboard(d.Revision)
+	if d.CollectionMessageID != 0 {
+		if err := b.telegram.EditMessageText(ctx, d.ChatID, d.CollectionMessageID, text, markup); err == nil {
+			return nil
+		}
 	}
-	return true, b.scheduleReply(ctx, m, resources.Format("schedule.collected", map[string]any{"count": len(d.Inputs)}), scheduleCollectKeyboard(d.Revision))
+	// Keep one counter for the whole batch, including album parts arriving in
+	// separate updates. Recreate the status if its message has been deleted.
+	message, err := b.telegram.SendMessage(ctx, d.ChatID, text, 0, markup)
+	if err != nil {
+		return err
+	}
+	d.CollectionMessageID = message.MessageID
+	_, err = b.schedules.SaveDraft(ctx, d)
+	return err
 }
 
 func scheduleNotesFit(notes []string, next string) bool {
@@ -296,7 +308,11 @@ func (b *Bot) recognizeSchedule(ctx context.Context, m *telegram.Message, d sche
 		return b.showScheduleDraft(ctx, m, d)
 	}
 	responseCtx := ctx
-	if err := b.scheduleReply(ctx, m, resources.Get("schedule.recognizing"), nil); err != nil {
+	status := resources.Get("schedule.recognizing")
+	if len(d.Inputs) > 0 {
+		status = resources.Format("schedule.recognizing_images", map[string]any{"count": len(d.Inputs)})
+	}
+	if err := b.scheduleReply(ctx, m, status, nil); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -330,6 +346,7 @@ func (b *Bot) recognizeSchedule(ctx context.Context, m *telegram.Message, d sche
 	// The revised plan now contains these inputs. Replaying relative edits or
 	// earlier screenshots in later requests could undo corrections or apply twice.
 	d.Inputs, d.Notes = nil, nil
+	d.CollectionMessageID = 0
 	d, err = b.schedules.SaveDraft(responseCtx, d)
 	if errors.Is(err, schedules.ErrDraftChanged) {
 		return b.scheduleReply(responseCtx, m, resources.Get("schedule.stale"), nil)

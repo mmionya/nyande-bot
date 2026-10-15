@@ -26,13 +26,14 @@ type Input struct {
 }
 
 type Draft struct {
-	UserID   int64    `json:"user_id"`
-	ChatID   int64    `json:"chat_id"`
-	Revision int64    `json:"revision"`
-	Plan     Plan     `json:"plan"`
-	Inputs   []Input  `json:"inputs,omitempty"`
-	Notes    []string `json:"notes,omitempty"`
-	Stage    string   `json:"stage"`
+	UserID              int64    `json:"user_id"`
+	ChatID              int64    `json:"chat_id"`
+	Revision            int64    `json:"revision"`
+	Plan                Plan     `json:"plan"`
+	Inputs              []Input  `json:"inputs,omitempty"`
+	Notes               []string `json:"notes,omitempty"`
+	Stage               string   `json:"stage"`
+	CollectionMessageID int      `json:"collection_message_id,omitempty"`
 }
 
 type Active struct {

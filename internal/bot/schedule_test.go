@@ -21,6 +21,8 @@ import (
 )
 
 type scheduleSentMessage struct {
+	ChatID      int64  `json:"chat_id"`
+	MessageID   int    `json:"message_id"`
 	Text        string `json:"text"`
 	ReplyMarkup struct {
 		InlineKeyboard [][]struct {
@@ -38,13 +40,15 @@ type scheduleLLMRequest struct {
 }
 
 type scheduleTestNetwork struct {
-	mu       sync.Mutex
-	messages []scheduleSentMessage
-	answers  []string
-	files    []string
-	requests []scheduleLLMRequest
-	plan     schedules.Plan
-	typed    chan struct{}
+	mu        sync.Mutex
+	messages  []scheduleSentMessage
+	edits     []scheduleSentMessage
+	editFails bool
+	answers   []string
+	files     []string
+	requests  []scheduleLLMRequest
+	plan      schedules.Plan
+	typed     chan struct{}
 }
 
 func scheduleUITestPlan(t *testing.T) schedules.Plan {
@@ -128,6 +132,18 @@ func scheduleUITestBot(t *testing.T, plan schedules.Plan) (*Bot, *scheduleTestNe
 			}
 			network.mu.Lock()
 			network.messages = append(network.messages, payload)
+			body = fmt.Sprintf(`{"ok":true,"result":{"message_id":%d}}`, 100+len(network.messages))
+			network.mu.Unlock()
+		case strings.HasSuffix(r.URL.Path, "/editMessageText"):
+			var payload scheduleSentMessage
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			network.mu.Lock()
+			network.edits = append(network.edits, payload)
+			if network.editFails {
+				body = `{"ok":false,"error_code":400,"description":"Bad Request: message to edit not found"}`
+			}
 			network.mu.Unlock()
 		case strings.HasSuffix(r.URL.Path, "/answerCallbackQuery"):
 			var payload struct {
@@ -199,10 +215,22 @@ func TestScheduleAlbumCollectsAllImagesBeforeRecognition(t *testing.T) {
 	if len(network.messages) != 2 {
 		t.Fatalf("album acknowledgement spam: %d messages", len(network.messages))
 	}
+	if len(network.edits) != 2 || draft.CollectionMessageID != 102 {
+		t.Fatalf("album status was not persisted and updated: edits=%+v draft=%+v", network.edits, draft)
+	}
+	for i, edit := range network.edits {
+		want := resources.Format("schedule.collected", map[string]any{"count": i + 2})
+		if edit.ChatID != 1 || edit.MessageID != 102 || edit.Text != want {
+			t.Fatalf("album counter did not update same message: %+v", edit)
+		}
+	}
 	if firstButton == fmt.Sprintf("sch:recognize:%d", draft.Revision) {
 		t.Fatal("fixture did not produce an older album button")
 	}
 	scheduleUIUpdate(t, b, telegram.Update{CallbackQuery: scheduleUICallback(firstButton)})
+	if network.messages[2].Text != resources.Format("schedule.recognizing_images", map[string]any{"count": 3}) {
+		t.Fatalf("recognition did not report full image count: %q", network.messages[2].Text)
+	}
 	if len(network.requests) != 1 || strings.Join(network.files, ",") != "full-0,full-1,full-2" {
 		t.Fatalf("first album button failed to recognize latest complete batch: requests=%d files=%v", len(network.requests), network.files)
 	}
@@ -225,11 +253,33 @@ func TestScheduleAlbumCollectsAllImagesBeforeRecognition(t *testing.T) {
 	if err != nil || draft.Stage != "review" || len(draft.Plan.Lessons) != 1 {
 		t.Fatalf("recognition did not create review draft: %+v, %v", draft, err)
 	}
-	if len(draft.Inputs) != 0 || len(draft.Notes) != 0 {
+	if len(draft.Inputs) != 0 || len(draft.Notes) != 0 || draft.CollectionMessageID != 0 {
 		t.Fatal("recognized images and notes were retained for replay")
 	}
 	if _, err := b.schedules.GetActive(context.Background(), 1, 1); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("recognition activated without confirmation: %v", err)
+	}
+}
+
+func TestScheduleDeletedCollectionMessageIsRecreated(t *testing.T) {
+	b, network := scheduleUITestBot(t, scheduleUITestPlan(t))
+	scheduleUIUpdate(t, b, telegram.Update{Message: scheduleUIMessage(1, "/schedule new")})
+	for i := 0; i < 3; i++ {
+		network.editFails = i == 1
+		m := scheduleUIMessage(2+i, "")
+		m.MediaGroupID = "album-1"
+		m.Photo = []telegram.PhotoSize{{FileID: fmt.Sprintf("photo-%d", i)}}
+		scheduleUIUpdate(t, b, telegram.Update{Message: m})
+	}
+	draft, err := b.schedules.GetDraft(context.Background(), 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(draft.Inputs) != 3 || draft.CollectionMessageID != 103 || len(network.messages) != 3 || len(network.edits) != 2 {
+		t.Fatalf("deleted collection status not replaced: draft=%+v messages=%d edits=%+v", draft, len(network.messages), network.edits)
+	}
+	if network.edits[1].MessageID != 103 || network.edits[1].Text != resources.Format("schedule.collected", map[string]any{"count": 3}) {
+		t.Fatalf("next photo did not update replacement status: %+v", network.edits[1])
 	}
 }
 
