@@ -66,6 +66,9 @@ func (d *Downloader) downloadPinterest(ctx context.Context, value *url.URL) (Res
 		for _, raw := range candidate.urls {
 			item, downloadErr := d.fetchMediaWithReferer(ctx, raw, candidate.kind, resolved.String())
 			if downloadErr != nil {
+				if errors.Is(downloadErr, ErrVideoCompression) || ctx.Err() != nil {
+					return Result{}, downloadErr
+				}
 				combined = errors.Join(combined, downloadErr)
 				continue
 			}
@@ -86,6 +89,12 @@ func (d *Downloader) downloadPinterest(ctx context.Context, value *url.URL) (Res
 }
 
 func (d *Downloader) downloadPinterestFallback(ctx context.Context, value *url.URL, nativeErr error) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if errors.Is(nativeErr, ErrVideoCompression) {
+		return Result{}, nativeErr
+	}
 	result, err := d.downloadYTDLP(ctx, value)
 	if err == nil {
 		result.Source = "pinterest"

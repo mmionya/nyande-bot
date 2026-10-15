@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -25,18 +24,27 @@ func (d *Downloader) downloadYTDLPWithOptions(ctx context.Context, value *url.UR
 	formats := ytdlpMediaFormats(value)
 	var lastErr error
 	var sizeErr error
+	var compressionFormat string
 	for index, format := range formats {
-		result, err := d.downloadYTDLPAttempt(ctx, value, allowPlaylist, format)
+		result, err := d.downloadYTDLPAttempt(ctx, value, allowPlaylist, format, d.cfg.VideoCompressionEnabled && !IsYouTube(value))
 		if err == nil {
 			return result, nil
 		}
 		lastErr = err
 		if errors.Is(err, errYTDLPMediaTooLarge) {
 			sizeErr = err
+			compressionFormat = format
 		}
 		if index == len(formats)-1 || !IsYouTube(value) || ctx.Err() != nil || !youtubeFormatFallbackError(err) {
 			break
 		}
+	}
+	// YouTube gets every smaller download first. Only a size failure permits
+	// one larger-source attempt using the smallest format known to be available.
+	if d.cfg.VideoCompressionEnabled && IsYouTube(value) && sizeErr != nil && ctx.Err() == nil &&
+		(errors.Is(lastErr, errYTDLPMediaTooLarge) || errors.Is(lastErr, errYTDLPNoMedia) ||
+			strings.Contains(strings.ToLower(lastErr.Error()), "requested format is not available")) {
+		return d.downloadYTDLPAttempt(ctx, value, allowPlaylist, compressionFormat, true)
 	}
 	if sizeErr != nil && (errors.Is(lastErr, errYTDLPNoMedia) || strings.Contains(strings.ToLower(lastErr.Error()), "requested format is not available")) {
 		return Result{}, sizeErr
@@ -44,7 +52,7 @@ func (d *Downloader) downloadYTDLPWithOptions(ctx context.Context, value *url.UR
 	return Result{}, lastErr
 }
 
-func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, allowPlaylist bool, format string) (Result, error) {
+func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, allowPlaylist bool, format string, allowCompression bool) (Result, error) {
 	isYouTube := IsYouTube(value)
 	directory, err := os.MkdirTemp("", "nyande-ytdlp-*")
 	if err != nil {
@@ -56,9 +64,13 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 	if IsInstagram(value) {
 		output = filepath.Join(directory, "%(playlist_index|0)05d-%(id)s.%(ext)s")
 	}
+	downloadLimit := d.cfg.MaxFileSize
+	if allowCompression {
+		downloadLimit = d.videoSourceLimit()
+	}
 	arguments := []string{
 		"--ignore-config", "--no-progress", "--newline",
-		"--max-filesize", strconv.FormatInt(d.cfg.MaxFileSize, 10),
+		"--max-filesize", strconv.FormatInt(downloadLimit, 10),
 		"--write-info-json",
 		"--output", output,
 	}
@@ -86,12 +98,21 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 		arguments = append(arguments, "--cookies-from-browser", d.cfg.YTDownloadBrowser)
 	}
 	arguments = append(arguments, value.String())
-	command := exec.CommandContext(ctx, d.cfg.YTDownloadPath, arguments...)
-	command.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
-	outputData, err := command.CombinedOutput()
+	// Allow room for separate streams plus the merged file, and metadata.
+	diskLimit := 2*downloadLimit + 1024*1024
+	if !d.cfg.VideoCompressionEnabled {
+		diskLimit = 2*downloadLimit*int64(max(1, d.cfg.MaxMediaItems)) + 1024*1024
+	}
+	outputData, err := runYTDLP(ctx, d.cfg.YTDownloadPath, arguments, directory, diskLimit)
 	if err != nil {
+		if ctx.Err() != nil {
+			return Result{}, ctx.Err()
+		}
 		detail := tail(string(outputData), 3000)
-		if ytdlpSizeLimitOutput(detail) {
+		if errors.Is(err, errYTDLPMediaTooLarge) || ytdlpSizeLimitOutput(detail) {
+			if allowCompression {
+				return Result{}, compressionRefusal("downloader.error.video_source_too_large", downloadLimit/(1024*1024))
+			}
 			return Result{}, fmt.Errorf("%w: %s", errYTDLPMediaTooLarge, detail)
 		}
 		return Result{}, fmt.Errorf(resources.Get("downloader.error.yt_dlp_failed"), err, detail)
@@ -130,8 +151,22 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 		if err != nil {
 			continue
 		}
-		if info.Size() > d.cfg.MaxFileSize {
+		if info.Size() > downloadLimit || (info.Size() > d.cfg.MaxFileSize && (kind != "video" || !allowCompression)) {
+			if kind == "video" && allowCompression {
+				return Result{}, compressionRefusal("downloader.error.video_source_too_large", downloadLimit/(1024*1024))
+			}
 			oversizedMedia = true
+			continue
+		}
+		if kind == "video" && allowCompression {
+			item, err := d.videoMediaFromFile(ctx, fullPath, entry.Name(), mimeForName(entry.Name()))
+			if err != nil {
+				return Result{}, err
+			}
+			items = append(items, item)
+			if len(items) >= d.cfg.MaxMediaItems {
+				break
+			}
 			continue
 		}
 		data, err := os.ReadFile(fullPath)
@@ -155,6 +190,9 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 	}
 	if len(items) == 0 {
 		if oversizedMedia || ytdlpSizeLimitOutput(string(outputData)) {
+			if allowCompression && !oversizedMedia {
+				return Result{}, compressionRefusal("downloader.error.video_source_too_large", downloadLimit/(1024*1024))
+			}
 			return Result{}, errYTDLPMediaTooLarge
 		}
 		return Result{}, errYTDLPNoMedia

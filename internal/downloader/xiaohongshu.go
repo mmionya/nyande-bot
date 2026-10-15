@@ -60,6 +60,9 @@ func (d *Downloader) downloadXiaohongshu(ctx context.Context, value *url.URL) (R
 			if downloadErr == nil {
 				return Result{Items: []Media{item}, Caption: caption, Source: "xiaohongshu"}, nil
 			}
+			if errors.Is(downloadErr, ErrVideoCompression) || ctx.Err() != nil {
+				return Result{}, downloadErr
+			}
 			combined = errors.Join(combined, downloadErr)
 		}
 		return d.downloadXiaohongshuFallback(ctx, resolved, combined)
@@ -72,6 +75,9 @@ func (d *Downloader) downloadXiaohongshu(ctx context.Context, value *url.URL) (R
 		for _, raw := range alternatives {
 			item, downloadErr := d.fetchMediaWithReferer(ctx, raw, "photo", resolved.String())
 			if downloadErr != nil {
+				if errors.Is(downloadErr, ErrVideoCompression) || ctx.Err() != nil {
+					return Result{}, downloadErr
+				}
 				combined = errors.Join(combined, downloadErr)
 				continue
 			}
@@ -92,6 +98,12 @@ func (d *Downloader) downloadXiaohongshu(ctx context.Context, value *url.URL) (R
 }
 
 func (d *Downloader) downloadXiaohongshuFallback(ctx context.Context, value *url.URL, nativeErr error) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if errors.Is(nativeErr, ErrVideoCompression) {
+		return Result{}, nativeErr
+	}
 	result, err := d.downloadYTDLP(ctx, value)
 	if err == nil {
 		result.Source = "xiaohongshu"

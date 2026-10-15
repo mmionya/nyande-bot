@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDotEnvUsesLastValueAndPreservesProcessEnvironment(t *testing.T) {
@@ -125,6 +126,68 @@ func TestDirectMusicDefaults(t *testing.T) {
 	cfg, err = Load()
 	if err != nil || cfg.MusicMaxPlayers != 3 || cfg.FFmpegPath != "/opt/media/ffmpeg" {
 		t.Fatal("music configuration override failed", err)
+	}
+}
+
+func TestVideoCompressionConfiguration(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("BOT_TOKEN", "test")
+	t.Setenv("LLM_ENABLED", "false")
+	for _, name := range []string{
+		"BOT_OWNER_IDS", "DISCORD_OWNER_IDS", "DATA_ENCRYPTION_KEY_FILE",
+		"VIDEO_COMPRESSION_ENABLED", "VIDEO_MAX_SOURCE_SIZE",
+		"VIDEO_COMPRESSION_TIMEOUT_SECONDS", "VIDEO_MAX_DURATION_SECONDS", "FFPROBE_PATH",
+	} {
+		t.Setenv(name, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.VideoCompressionEnabled || cfg.VideoMaxSourceSize != 300*1024*1024 ||
+		cfg.VideoCompressionTimeout != 5*time.Minute || cfg.VideoMaxDuration != 10*time.Minute ||
+		cfg.FFprobePath != "ffprobe" {
+		t.Fatal("unexpected video compression defaults")
+	}
+
+	t.Setenv("VIDEO_COMPRESSION_ENABLED", "false")
+	t.Setenv("VIDEO_MAX_SOURCE_SIZE", "104857600")
+	t.Setenv("VIDEO_COMPRESSION_TIMEOUT_SECONDS", "90.5")
+	t.Setenv("VIDEO_MAX_DURATION_SECONDS", "120")
+	t.Setenv("FFPROBE_PATH", "/opt/media/ffprobe")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VideoCompressionEnabled || cfg.VideoMaxSourceSize != 100*1024*1024 ||
+		cfg.VideoCompressionTimeout != 90500*time.Millisecond || cfg.VideoMaxDuration != 2*time.Minute ||
+		cfg.FFprobePath != "/opt/media/ffprobe" {
+		t.Fatal("video compression overrides not applied")
+	}
+
+	for _, invalid := range []string{"0", "1023", "2147483649", "-1", "invalid"} {
+		t.Run("source_size/"+invalid, func(t *testing.T) {
+			t.Setenv("VIDEO_MAX_SOURCE_SIZE", invalid)
+			cfg, err := Load()
+			if err != nil || cfg.VideoMaxSourceSize != 300*1024*1024 {
+				t.Fatalf("invalid source limit must use the default: %v", err)
+			}
+		})
+	}
+	for _, name := range []string{"VIDEO_COMPRESSION_TIMEOUT_SECONDS", "VIDEO_MAX_DURATION_SECONDS"} {
+		for _, invalid := range []string{"0", "-1", "NaN", "+Inf", "-Inf", "1e30", "1e-12", "invalid"} {
+			t.Run(name+"/"+invalid, func(t *testing.T) {
+				t.Setenv(name, invalid)
+				cfg, err := Load()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if name == "VIDEO_COMPRESSION_TIMEOUT_SECONDS" && cfg.VideoCompressionTimeout != 5*time.Minute ||
+					name == "VIDEO_MAX_DURATION_SECONDS" && cfg.VideoMaxDuration != 10*time.Minute {
+					t.Fatal("invalid duration must preserve a positive default safety limit")
+				}
+			})
+		}
 	}
 }
 

@@ -16,13 +16,17 @@ import (
 )
 
 func (b *Bot) downloadMediaTool(message *telegram.Message) llm.Tool {
-	return newDownloadMediaTool(func(ctx context.Context, rawURL string) (int, error) {
+	return newDownloadMediaToolWithTimeout(func(ctx context.Context, rawURL string) (int, error) {
 		sent, err := b.downloadAndSendMedia(ctx, message, rawURL)
 		return len(sent), err
-	})
+	}, 3*time.Minute+b.downloader.CompressionTimeout())
 }
 
 func newDownloadMediaTool(deliver func(context.Context, string) (int, error)) llm.Tool {
+	return newDownloadMediaToolWithTimeout(deliver, 3*time.Minute)
+}
+
+func newDownloadMediaToolWithTimeout(deliver func(context.Context, string) (int, error), timeout time.Duration) llm.Tool {
 	// A new tool is created for each user request. Remember attempts, including
 	// ambiguous/partial Telegram failures, to avoid sending the same files twice.
 	var mu sync.Mutex
@@ -50,7 +54,7 @@ func newDownloadMediaTool(deliver func(context.Context, string) (int, error)) ll
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}
-			downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			downloadCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			count, err := deliver(downloadCtx, rawURL)
 			var outcome string

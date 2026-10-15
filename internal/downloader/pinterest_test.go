@@ -3,15 +3,43 @@ package downloader
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/mmionya/nyande-bot/internal/config"
 )
+
+func TestNativeCompressionFailureSkipsExtractorFallback(t *testing.T) {
+	for _, source := range []string{"pinterest", "xiaohongshu"} {
+		t.Run(source, func(t *testing.T) {
+			script := filepath.Join(t.TempDir(), "yt-dlp")
+			if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch \"$0.called\"\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			d := New(config.Config{YTDownloadPath: script, MaxFileSize: 1024})
+			fallback := d.downloadPinterestFallback
+			if source == "xiaohongshu" {
+				fallback = d.downloadXiaohongshuFallback
+			}
+			value, _ := url.Parse("https://www." + source + ".com/post/123/")
+			failure := fmt.Errorf("%w: timeout", ErrVideoCompression)
+			_, err := fallback(context.Background(), value, failure)
+			if !errors.Is(err, failure) {
+				t.Fatalf("compression error was lost: %v", err)
+			}
+			if _, err := os.Stat(script + ".called"); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("extractor was invoked after compression failed: %v", err)
+			}
+		})
+	}
+}
 
 func TestPinterestShortLinkSkipsUnusedPinPage(t *testing.T) {
 	const pinURL = "https://www.pinterest.com/pin/123/"

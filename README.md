@@ -14,6 +14,7 @@ original Python and Rust versions.
 - supports direct image and video links;
 - sends carousels as Telegram albums or Discord attachment batches of up to 10
   files and validates file-size limits;
+- compresses oversized downloaded videos when possible;
 - works with OpenRouter and other OpenAI-compatible APIs;
 - sends photos, selected video frames, and audio/video transcripts to the LLM;
 - restores the entire cached album when a user replies to one of the files
@@ -345,6 +346,24 @@ The bot requires `yt-dlp` with its EJS component, Deno, `ffmpeg`, and `ffprobe`
 at runtime. The Docker image includes all of them. Local transcription
 additionally requires the `whisper` CLI.
 
+## Oversized videos
+
+`MAX_FILE_SIZE` is the outgoing file-size limit in bytes (default 50 MiB).
+Videos that already fit are sent unchanged. YouTube still tries smaller download
+formats first. If a downloaded video is too large, the bot can compress it to
+MP4 with H.264 video and AAC audio, reducing resolution when needed.
+
+Compression is enabled by default (`VIDEO_COMPRESSION_ENABLED=true`). Source
+videos are stored in temporary files on disk, with a separate
+`VIDEO_MAX_SOURCE_SIZE` limit of 300 MiB (configurable from 1 KiB to 2 GiB).
+Only one compression runs at a time across the bot process. By default, videos
+longer than 10 minutes are not compressed (`VIDEO_MAX_DURATION_SECONDS=600`),
+and compression has a five-minute timeout (`VIDEO_COMPRESSION_TIMEOUT_SECONDS=300`).
+These time limits must be positive; invalid values fall back to the defaults.
+The bot reports an error if it cannot produce a suitable file within the limits;
+it does not split videos into parts. Compression can reduce quality and delay
+delivery. `FFMPEG_PATH` and `FFPROBE_PATH` select the required executables.
+
 ## Downloads without manually exported cookies
 
 Leave `YTDLP_COOKIES_FILE` and `YTDLP_COOKIES_FROM_BROWSER` empty for public
@@ -433,7 +452,9 @@ The tool accepts supported platform post URLs and direct image/video URLs, not
 ordinary articles or search result pages.
 
 Existing `MAX_FILE_SIZE` and `MAX_MEDIA_ITEMS` limits apply. Each attempt has a
-three-minute timeout; repeated calls for the same URL in one request do not send
+three-minute timeout plus `VIDEO_COMPRESSION_TIMEOUT_SECONDS` when compression
+is enabled (eight minutes with the defaults); an earlier request cancellation
+still stops it. Repeated calls for the same URL in one request do not send
 duplicate files. Failures and partial deliveries are reported back to the model.
 Availability still depends on the source site and downloader configuration.
 

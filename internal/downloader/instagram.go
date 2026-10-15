@@ -64,6 +64,9 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 	if err == nil {
 		return result, nil
 	}
+	if errors.Is(err, ErrVideoCompression) || ctx.Err() != nil {
+		return Result{}, err
+	}
 	combined := err
 	for index, pageURL := range []string{canonical, embed} {
 		if err := ctx.Err(); err != nil {
@@ -85,6 +88,9 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		if err == nil && len(items) > 0 {
 			return Result{Items: items, Caption: caption, Source: "instagram"}, nil
 		}
+		if errors.Is(err, ErrVideoCompression) || ctx.Err() != nil {
+			return Result{}, err
+		}
 		combined = errors.Join(combined, err)
 	}
 
@@ -97,6 +103,9 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		log.Printf(resources.Get("downloader.log.instagram_stage"), "vxinstagram", time.Since(started).Milliseconds(), err == nil)
 		if err == nil {
 			return Result{Items: []Media{item}, Caption: caption, Source: "instagram"}, nil
+		}
+		if errors.Is(err, ErrVideoCompression) || ctx.Err() != nil {
+			return Result{}, err
 		}
 		combined = errors.Join(combined, fmt.Errorf(resources.Get("downloader.error.vxinstagram_download_failed"), err))
 	}
@@ -387,6 +396,9 @@ func (d *Downloader) downloadInstagramItems(ctx context.Context, rawURLs []strin
 		}
 		item, err := d.fetchMediaWithReferer(ctx, parsed.String(), "", referer)
 		if err != nil {
+			if errors.Is(err, ErrVideoCompression) || ctx.Err() != nil {
+				return nil, err
+			}
 			combined = errors.Join(combined, err)
 			continue
 		}

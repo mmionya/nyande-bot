@@ -23,6 +23,9 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 	}
 	resolved, err := d.resolveRedditURL(ctx, value)
 	if err != nil {
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 		return d.downloadYTDLP(ctx, value)
 	}
 	jsonURL := *resolved
@@ -55,6 +58,9 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 							}
 							item, downloadErr := d.fetchMedia(ctx, imageURL, "photo")
 							if downloadErr != nil {
+								if ctx.Err() != nil {
+									return Result{}, ctx.Err()
+								}
 								continue
 							}
 							items = append(items, item)
@@ -66,6 +72,9 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 				}
 			}
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
 	}
 	return d.downloadYTDLP(ctx, resolved)
 }

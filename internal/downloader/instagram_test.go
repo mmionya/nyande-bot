@@ -104,6 +104,45 @@ exit 1
 	}
 }
 
+func TestInstagramCompressionFailureStopsAlternativesAndFallbacks(t *testing.T) {
+	value, _ := url.Parse("https://www.instagram.com/reel/ABC123/")
+	if !isPublicURL(context.Background(), value) {
+		t.Skip("public Instagram DNS unavailable; HTTP requests are mocked")
+	}
+	d := New(config.Config{
+		YTDownloadPath: filepath.Join(t.TempDir(), "missing-yt-dlp"),
+		MaxFileSize:    1024, MaxMediaItems: 10, RetryAttempts: 3,
+		APIFYToken: "fake",
+	})
+	var paths []string
+	d.client.Transport = mediaRedirectTransport(func(request *http.Request) (*http.Response, error) {
+		paths = append(paths, request.URL.Path)
+		switch request.URL.Path {
+		case "/reel/ABC123/":
+			page := `<meta property="og:video" content="https://www.instagram.com/one.mp4">
+				<script>{"video_url":"https://www.instagram.com/two.mp4"}</script>`
+			return &http.Response{
+				StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/html"}},
+				Body: io.NopCloser(strings.NewReader(page)), Request: request,
+			}, nil
+		case "/one.mp4":
+			// The wrapped error resembles a temporary transport error, but retrying
+			// another URL or source must not repeat failed video processing.
+			return nil, fmt.Errorf("%w: timeout", ErrVideoCompression)
+		default:
+			t.Fatalf("compression failure reached alternative or fallback %s", request.URL)
+			return nil, errors.New("unexpected fallback")
+		}
+	})
+	_, err := d.Download(context.Background(), value.String())
+	if !errors.Is(err, ErrVideoCompression) {
+		t.Fatalf("compression error was lost: %v", err)
+	}
+	if want := []string{"/reel/ABC123/", "/one.mp4"}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("requests = %v, want %v", paths, want)
+	}
+}
+
 func TestInstagramPageMediaExtractsEscapedCarouselImages(t *testing.T) {
 	page := `<meta content="A photo caption &amp; more" property="og:description">
 		<script>

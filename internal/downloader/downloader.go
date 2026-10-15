@@ -234,6 +234,9 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	// Check redirect destinations before connecting, not just after receiving
 	// their response: media links may originate in untrusted search results.
 	client := *d.client
+	if d.cfg.VideoCompressionEnabled {
+		client.Timeout = max(client.Timeout, 3*time.Minute)
+	}
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		if !isPublicURL(ctx, next.URL) {
 			return errors.New(resources.Get("downloader.error.media_redirected_to_a_non_public_address"))
@@ -267,6 +270,9 @@ func (d *Downloader) fetchMediaWithReferer(ctx context.Context, rawURL, expected
 	}
 	if expectedKind != "" && expectedKind != kind {
 		return Media{}, fmt.Errorf(resources.Get("downloader.error.expected_received"), expectedKind, kind)
+	}
+	if kind == "video" && d.cfg.VideoCompressionEnabled {
+		return d.readVideoMedia(ctx, response.Body, response.ContentLength, filenameFromURL(response.Request.URL, contentType), contentType)
 	}
 	if response.ContentLength > d.cfg.MaxFileSize {
 		return Media{}, fmt.Errorf(resources.Get("downloader.error.media_is_too_large_bytes"), response.ContentLength)
@@ -362,7 +368,7 @@ func isPublicURL(ctx context.Context, value *url.URL) bool {
 }
 
 func retryable(err error) bool {
-	if err == nil {
+	if err == nil || errors.Is(err, ErrVideoCompression) {
 		return false
 	}
 	text := strings.ReplaceAll(strings.ToLower(err.Error()), "http error ", "http ")

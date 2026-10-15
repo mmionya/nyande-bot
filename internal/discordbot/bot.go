@@ -217,8 +217,13 @@ func (b *Bot) handleMedia(session *discordgo.Session, message *discordgo.Message
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(b.currentContext(), downloadTimeout)
+	ctx, cancel := context.WithTimeout(b.currentContext(), downloadTimeout+b.downloader.CompressionTimeout())
 	defer cancel()
+	ctx = downloader.WithVideoCompressionStatus(ctx, func(statusCtx context.Context) {
+		statusCtx, cancel := context.WithTimeout(statusCtx, 5*time.Second)
+		defer cancel()
+		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, resources.Get("downloader.status.compressing"), discordgo.WithContext(statusCtx))
+	})
 	result, err := b.downloader.Download(ctx, mediaURL)
 	if err != nil {
 		b.mediaErrors.Add(1)
@@ -359,6 +364,9 @@ func (b *Bot) statsText() string {
 }
 
 func downloadErrorText(err error) string {
+	if message := downloader.VideoCompressionMessage(err); message != "" {
+		return message
+	}
 	text := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(text, "too large") || strings.Contains(text, "exceeds"):

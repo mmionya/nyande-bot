@@ -38,7 +38,14 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 		log.Printf(resources.Get("telegram.log.media_status_failed"), message.Chat.ID, message.MessageID, time.Since(started).Milliseconds())
 		return nil, err
 	}
-	result, err := b.downloader.Download(ctx, mediaURL)
+	downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute+b.downloader.CompressionTimeout())
+	defer cancel()
+	downloadCtx = downloader.WithVideoCompressionStatus(downloadCtx, func(statusCtx context.Context) {
+		statusCtx, cancel := context.WithTimeout(statusCtx, 5*time.Second)
+		defer cancel()
+		_ = b.telegram.EditMessageText(statusCtx, message.Chat.ID, status.MessageID, resources.Get("downloader.status.compressing"), nil)
+	})
+	result, err := b.downloader.Download(downloadCtx, mediaURL)
 	if err == nil && len(result.Items) == 0 {
 		err = errors.New(resources.Get("telegram.error.download_empty"))
 	}
@@ -145,6 +152,9 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 }
 
 func humanDownloadError(rawURL string, err error) string {
+	if message := downloader.VideoCompressionMessage(err); message != "" {
+		return message
+	}
 	text := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(text, "too large") || strings.Contains(text, "exceeds"):

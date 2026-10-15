@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,6 +27,7 @@ type Config struct {
 	MusicBackend           string
 	MusicMaxPlayers        int
 	FFmpegPath             string
+	FFprobePath            string
 	LavalinkAddress        string
 	LavalinkPassword       string
 	LavalinkSecure         bool
@@ -74,6 +76,11 @@ type Config struct {
 	ReminderDBFile         string
 	QuoteDBFile            string
 	StorageEncryptionKey   []byte
+
+	VideoCompressionEnabled bool
+	VideoMaxSourceSize      int64
+	VideoCompressionTimeout time.Duration
+	VideoMaxDuration        time.Duration
 }
 
 func Load() (Config, error) {
@@ -91,6 +98,7 @@ func Load() (Config, error) {
 		MusicBackend:           envString("DISCORD_MUSIC_BACKEND", "direct"),
 		MusicMaxPlayers:        envInt("MUSIC_MAX_PLAYERS", 1, 1, 10),
 		FFmpegPath:             envString("FFMPEG_PATH", "ffmpeg"),
+		FFprobePath:            envString("FFPROBE_PATH", "ffprobe"),
 		LavalinkAddress:        strings.TrimSpace(os.Getenv("LAVALINK_ADDRESS")),
 		LavalinkPassword:       envString("LAVALINK_PASSWORD", "youshallnotpass"),
 		LavalinkSecure:         envBool("LAVALINK_SECURE", false),
@@ -138,6 +146,11 @@ func Load() (Config, error) {
 		ChatLogMaxPerChat:      envInt("CHAT_LOG_MAX_PER_CHAT", 50000, 100, 1000000),
 		ReminderDBFile:         envString("REMINDER_DB_FILE", ".nyande-reminders.db"),
 		QuoteDBFile:            envString("QUOTE_DB_FILE", ".nyande-quotes.db"),
+
+		VideoCompressionEnabled: envBool("VIDEO_COMPRESSION_ENABLED", true),
+		VideoMaxSourceSize:      envInt64("VIDEO_MAX_SOURCE_SIZE", 300*1024*1024, 1024, 2*1024*1024*1024),
+		VideoCompressionTimeout: envPositiveDurationSeconds("VIDEO_COMPRESSION_TIMEOUT_SECONDS", 5*time.Minute),
+		VideoMaxDuration:        envPositiveDurationSeconds("VIDEO_MAX_DURATION_SECONDS", 10*time.Minute),
 	}
 	if cfg.BotToken == "" && cfg.DiscordToken == "" {
 		return Config{}, errors.New(resources.Get("config.error.bot_token_or_discord_bot_token_is_required"))
@@ -301,6 +314,15 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return time.Duration(value * float64(time.Second))
+}
+
+func envPositiveDurationSeconds(name string, fallback time.Duration) time.Duration {
+	value, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(name)), 64)
+	nanoseconds := value * float64(time.Second)
+	if err != nil || math.IsNaN(nanoseconds) || nanoseconds < 1 || nanoseconds >= float64(time.Duration(1<<63-1)) {
+		return fallback
+	}
+	return time.Duration(nanoseconds)
 }
 
 func (c Config) String() string {
