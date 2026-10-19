@@ -43,6 +43,7 @@ type Bot struct {
 	state      *State
 	allowlist  *allowlist
 	linkConfig *linkDeletionSettings
+	llmConfig  *llmChatSettings
 	identity   telegram.User
 	media      *mediaCache
 	chatlog    *chatlog.Store
@@ -79,6 +80,14 @@ func New(cfg config.Config) (*Bot, error) {
 	linkConfig, err := loadLinkDeletionSettings(cfg.LinkModerationFile)
 	if err != nil {
 		return nil, fmt.Errorf(resources.Get("telegram.error.load_moderation"), err)
+	}
+	llmSettingsPath := cfg.LLMSettingsFile
+	if llmSettingsPath == "" {
+		llmSettingsPath = ".nyande-telegram-llm.json"
+	}
+	llmConfig, err := loadLLMChatSettings(llmSettingsPath)
+	if err != nil {
+		return nil, fmt.Errorf(resources.Get("llm.control.load_failed"), err)
 	}
 	var memories *memory.Store
 	if cfg.LLMMemoryEnabled {
@@ -143,6 +152,7 @@ func New(cfg config.Config) (*Bot, error) {
 		wordleGames: make(map[wordleKey]*wordleGame),
 		quotes:      quoteStore,
 		schedules:   scheduleStore,
+		llmConfig:   llmConfig,
 	}, nil
 }
 
@@ -191,6 +201,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "botban", "description": resources.Get("telegram.command.botban")},
 		{"command": "botunban", "description": resources.Get("telegram.command.botunban")},
 		{"command": "linkdelete", "description": resources.Get("telegram.command.linkdelete")},
+		{"command": "llm", "description": resources.Get("telegram.command.llm")},
 		{"command": "permitlinks", "description": resources.Get("telegram.command.permitlinks")},
 		{"command": "revokelinks", "description": resources.Get("telegram.command.revokelinks")},
 		{"command": "ttt", "description": resources.Get("telegram.command.ttt")},
@@ -398,6 +409,10 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			return b.addAllowedLink(ctx, message, arguments)
 		case "linkdelete":
 			return b.configureLinkDeletion(ctx, message, arguments)
+		case "llm":
+			unlockMedia := b.lockUpdates(message.Chat.ID, true)
+			defer unlockMedia()
+			return b.configureLLM(ctx, message, arguments)
 		case "ttt":
 			return b.startTicTacToe(ctx, message)
 		case "checkers":
@@ -637,7 +652,11 @@ func userID(message *telegram.Message) int64 {
 }
 
 func (b *Bot) saveChatMessage(ctx context.Context, message *telegram.Message) {
-	if b.chatlog == nil || message == nil {
+	if b.chatlog == nil || message == nil || b.llmDisabled(message.Chat.ID) {
+		return
+	}
+	// Control commands must not be archived before their switch takes effect.
+	if command, _, ok := parseCommand(strings.TrimSpace(message.ContentText()), b.identity.Username); ok && command == "llm" {
 		return
 	}
 	text := strings.TrimSpace(message.ContentText())

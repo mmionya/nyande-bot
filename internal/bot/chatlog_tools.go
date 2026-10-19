@@ -12,7 +12,7 @@ import (
 )
 
 func (b *Bot) chatlogTools(message *telegram.Message) []llm.Tool {
-	if b.chatlog == nil || message == nil {
+	if b.chatlog == nil || message == nil || b.llmDisabled(message.Chat.ID) {
 		return nil
 	}
 	chatID := message.Chat.ID

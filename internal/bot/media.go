@@ -174,7 +174,7 @@ func humanDownloadError(rawURL string, err error) string {
 }
 
 func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
-	if !b.llm.Enabled() {
+	if b.llmDisabled(message.Chat.ID) || b.llm == nil || !b.llm.Enabled() {
 		return nil
 	}
 	text := strings.TrimSpace(message.ContentText())

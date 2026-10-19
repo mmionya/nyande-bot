@@ -73,6 +73,9 @@ func (b *Bot) scheduleCommand(ctx context.Context, m *telegram.Message, args str
 		}
 		return b.scheduleReply(ctx, m, resources.Format("schedule.skipped", map[string]any{"count": n}), nil)
 	case "new", "edit":
+		if b.llmDisabled(m.Chat.ID) {
+			return b.scheduleReply(ctx, m, resources.Get("llm.control.required"), nil)
+		}
 		if !b.cfg.LLMEnabled || b.llm == nil {
 			return b.scheduleReply(ctx, m, resources.Get("schedule.llm_disabled"), nil)
 		}
@@ -130,7 +133,7 @@ func (b *Bot) newScheduleDraft(ctx context.Context, m *telegram.Message) (schedu
 // Collect all album parts before invoking vision. The user chooses when the
 // batch is complete; no timer guesses whether another screenshot will arrive.
 func (b *Bot) handleScheduleInput(ctx context.Context, m *telegram.Message) (bool, error) {
-	if b.schedules == nil || !scheduleOwner(m) {
+	if b.schedules == nil || !scheduleOwner(m) || b.llmDisabled(m.Chat.ID) {
 		return false, nil
 	}
 	d, err := b.schedules.GetDraft(ctx, m.From.ID, m.Chat.ID)
@@ -301,6 +304,9 @@ func schedulePreview(p schedules.Plan) string {
 }
 
 func (b *Bot) recognizeSchedule(ctx context.Context, m *telegram.Message, d schedules.Draft) error {
+	if b.llmDisabled(m.Chat.ID) {
+		return b.scheduleReply(ctx, m, resources.Get("llm.control.required"), nil)
+	}
 	if b.llm == nil || !b.cfg.LLMEnabled {
 		return b.scheduleReply(ctx, m, resources.Get("schedule.llm_disabled"), nil)
 	}
@@ -416,7 +422,7 @@ func (b *Bot) handleScheduleCallback(ctx context.Context, q *telegram.CallbackQu
 }
 
 func (b *Bot) scheduleTools(m *telegram.Message) []llm.Tool {
-	if b.schedules == nil || !scheduleOwner(m) {
+	if b.schedules == nil || !scheduleOwner(m) || b.llmDisabled(m.Chat.ID) {
 		return nil
 	}
 	return []llm.Tool{{

@@ -24,6 +24,7 @@ type Config struct {
 	BannedUsersFile        string
 	DiscordPrefix          string
 	DiscordLLMSettingsFile string
+	LLMSettingsFile        string
 	MusicBackend           string
 	MusicMaxPlayers        int
 	FFmpegPath             string
@@ -96,6 +97,7 @@ func Load() (Config, error) {
 		BannedUsersFile:        envString("BANNED_USERS_FILE", ".nyande-banned-users.json"),
 		DiscordPrefix:          envString("DISCORD_COMMAND_PREFIX", "!"),
 		DiscordLLMSettingsFile: envString("DISCORD_LLM_SETTINGS_FILE", ".nyande-discord-llm.json"),
+		LLMSettingsFile:        envString("TELEGRAM_LLM_SETTINGS_FILE", ".nyande-telegram-llm.json"),
 		MusicBackend:           envString("DISCORD_MUSIC_BACKEND", "direct"),
 		MusicMaxPlayers:        envInt("MUSIC_MAX_PLAYERS", 1, 1, 10),
 		FFmpegPath:             envString("FFMPEG_PATH", "ffmpeg"),

@@ -233,6 +233,16 @@ recent chat context via `get_recent_messages`. To enable the bot to receive all 
 messages (even when unaddressed), disable Privacy Mode in `@BotFather` (`/setprivacy -> Disable`)
 or make the bot an administrator in the group. Set `CHAT_LOG_ENABLED=false` to disable chat logging.
 
+In Telegram, `/llm off` disables LLM replies and collection of new messages
+in the current chat, including edited messages and media captions. `/llm on`
+resumes them; `/llm` shows the current state. Group administrators control the
+setting in groups, and private-chat users control their own chat. Previously
+stored history is retained. The per-chat choice survives restarts in
+`TELEGRAM_LLM_SETTINGS_FILE` (default `.nyande-telegram-llm.json`); Compose
+keeps it at `/app/data/telegram-llm.json` in the persistent volume. Turning off
+the LLM also pauses new timetable extraction; existing class reminders and
+media download commands keep working.
+
 Archive lookup is available to participants only within the current chat. The
 chat ID comes from the Telegram message and cannot be selected by tool arguments.
 Search returns recent matches for words or a phrase. It scans one chat's stored
