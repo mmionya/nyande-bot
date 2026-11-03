@@ -34,15 +34,16 @@ type Image struct {
 }
 
 type Request struct {
-	ChatID       int64
-	UserName     string
-	Text         string
-	ReplyContext string // Request-only quoted context; excluded from conversation history.
-	Images       []Image
-	Transcripts  []string
-	Documents    []documents.Document // Request-only attachment context, excluded from history.
-	Memories     []Memory
-	Tools        []Tool
+	ChatID         int64
+	UserName       string
+	Text           string
+	ReplyContext   string // Request-only quoted context; excluded from conversation history.
+	StickerContext string // Request-only instructions about sticker frames and visible text.
+	Images         []Image
+	Transcripts    []string
+	Documents      []documents.Document // Request-only attachment context, excluded from history.
+	Memories       []Memory
+	Tools          []Tool
 }
 
 type Memory struct {
@@ -163,6 +164,8 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	text := strings.TrimSpace(request.Text)
 	if text == "" {
 		switch {
+		case request.StickerContext != "" && len(request.Images) > 0:
+			text = resources.Get("llm.prompt.sticker_only")
 		case len(request.Images) > 0:
 			text = resources.Get("llm.prompt.images_only")
 		case len(request.Transcripts) > 0:
@@ -184,6 +187,9 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	}
 
 	requestText := userText
+	if request.StickerContext != "" {
+		requestText += "\n\n" + request.StickerContext
+	}
 	documentText, documentImages := documentContext(request.Documents, 12-len(request.Images))
 	requestText += documentText
 	if request.ReplyContext != "" {

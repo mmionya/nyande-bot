@@ -198,12 +198,30 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("documents.error.download"), message.MessageID, nil)
 			return sendErr
 		}
+		if source := llmMediaSource(message); source != nil && (source.Sticker != nil || source.Voice != nil || source.Audio != nil) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.media.download_failed"), message.MessageID, nil)
+			return sendErr
+		}
 	}
 	images := make([]llm.Image, 0)
 	transcripts := make([]string, 0)
+	stickerContext := ""
 	var docs []documents.Document
 	for _, attachment := range attachments {
 		switch attachment.Kind {
+		case "sticker", "sticker_preview":
+			if !b.cfg.LLMVision {
+				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.sticker.vision_disabled"), message.MessageID, nil)
+				return sendErr
+			}
+			frames, contextText, stickerErr := b.readSticker(ctx, attachment)
+			if stickerErr != nil {
+				log.Printf(resources.Get("telegram.log.sticker_failed"), stickerErr)
+				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.sticker.failed"), message.MessageID, nil)
+				return sendErr
+			}
+			images = append(images, frames...)
+			stickerContext = contextText
 		case "document":
 			imageLimit := 0
 			if b.cfg.LLMVision {
@@ -237,14 +255,17 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 				}
 			}
 		case "audio", "voice":
-			if b.cfg.WhisperEnabled {
-				transcript, transcriptErr := b.transcribe(ctx, attachment, false)
-				if transcriptErr != nil {
-					log.Printf(resources.Get("telegram.log.audio_transcription_failed"), transcriptErr)
-				} else if transcript != "" {
-					transcripts = append(transcripts, transcript)
-				}
+			if !b.cfg.WhisperEnabled {
+				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.voice.disabled"), message.MessageID, nil)
+				return sendErr
 			}
+			transcript, transcriptErr := b.transcribe(ctx, attachment, false)
+			if transcriptErr != nil {
+				log.Printf(resources.Get("telegram.log.audio_transcription_failed"), transcriptErr)
+				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.voice.failed"), message.MessageID, nil)
+				return sendErr
+			}
+			transcripts = append(transcripts, transcript)
 		}
 	}
 	if len(images) > 12 {
@@ -264,7 +285,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	}
 	var mediaSpecs []string
 	for _, att := range attachments {
-		if att.Kind == "document" {
+		if att.Kind == "document" || att.Kind == "sticker" || att.Kind == "sticker_preview" {
 			continue
 		}
 		if spec, err := inspectMedia(ctx, att); err == nil && spec != "" {
@@ -288,8 +309,9 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	tools = append(tools, b.scheduleTools(message)...)
 	answer, err := b.llm.Ask(ctx, llm.Request{
 		ChatID: message.Chat.ID, UserName: userName, Text: text,
-		ReplyContext: replyContext(message),
-		Images:       images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,
+		ReplyContext:   replyContext(message),
+		StickerContext: stickerContext,
+		Images:         images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,
 		Documents: docs,
 	})
 	if err != nil {
@@ -305,6 +327,11 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 func (b *Bot) shouldHandleGroupLLM(message *telegram.Message) bool {
 	reply := message.ReplyToMessage
 	triggered := containsTriggerWord(message.ContentText(), b.cfg.LLMTriggerWords)
+	// Stickers and voice messages cannot carry a typed trigger. A direct reply
+	// to the bot is an explicit invocation, including replies to its media.
+	if (message.Sticker != nil || message.Voice != nil) && reply != nil && reply.From != nil && reply.From.ID == b.identity.ID {
+		return true
+	}
 	if b.isQuoteCard(reply) || (reply != nil && b.media != nil && b.media.Has(message.Chat.ID, reply.MessageID)) {
 		return triggered
 	}
@@ -369,6 +396,9 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 	}
 	if !messageHasMedia(message) {
 		return nil, nil
+	}
+	if message.Sticker != nil {
+		return b.collectSticker(ctx, message.Sticker)
 	}
 	var descriptors []struct {
 		kind     string
@@ -463,7 +493,7 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 			continue
 		}
 		maxSize := b.cfg.MaxFileSize
-		if descriptor.kind == "document" && (maxSize <= 0 || maxSize > documents.MaxFileSize) {
+		if (descriptor.kind == "document" || descriptor.kind == "voice" || descriptor.kind == "audio") && (maxSize <= 0 || maxSize > documents.MaxFileSize) {
 			maxSize = documents.MaxFileSize
 		}
 		data, filePath, err := b.telegram.DownloadFile(ctx, descriptor.fileID, maxSize)
@@ -489,7 +519,7 @@ func messageHasMedia(message *telegram.Message) bool {
 	if message == nil {
 		return false
 	}
-	if len(message.Photo) > 0 || message.Video != nil || message.Animation != nil ||
+	if len(message.Photo) > 0 || message.Video != nil || message.Animation != nil || message.Sticker != nil ||
 		message.Audio != nil || message.Voice != nil || message.VideoNote != nil {
 		return true
 	}
@@ -498,6 +528,13 @@ func messageHasMedia(message *telegram.Message) bool {
 		return documents.Supported(message.Document.FileName, mime) || strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "audio/")
 	}
 	return false
+}
+
+func llmMediaSource(message *telegram.Message) *telegram.Message {
+	if message != nil && !messageHasMedia(message) && message.ReplyToMessage != nil {
+		return message.ReplyToMessage
+	}
+	return message
 }
 
 func hasDocument(message *telegram.Message) bool {
@@ -538,6 +575,10 @@ func (b *Bot) typingLoop(ctx context.Context, chatID int64, stop <-chan struct{}
 }
 
 func extractVideoFrames(ctx context.Context, data []byte, name string, count int) ([]llm.Image, error) {
+	return extractVideoFramesWithFormat(ctx, data, name, count, false)
+}
+
+func extractVideoFramesWithFormat(ctx context.Context, data []byte, name string, count int, sticker bool) ([]llm.Image, error) {
 	directory, err := os.MkdirTemp("", "nyande-frames-*")
 	if err != nil {
 		return nil, err
@@ -559,10 +600,17 @@ func extractVideoFrames(ctx context.Context, data []byte, name string, count int
 	frames := make([]llm.Image, 0, count)
 	for index := 0; index < count; index++ {
 		position := duration * float64(index+1) / float64(count+1)
-		output := filepath.Join(directory, fmt.Sprintf("frame-%02d.jpg", index))
-		command := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
-			"-ss", fmt.Sprintf("%.3f", position), "-i", input, "-frames:v", "1",
-			"-vf", `scale=min(1280\,iw):-2`, "-q:v", "3", "-y", output)
+		extension, mimeType := ".jpg", "image/jpeg"
+		if sticker {
+			extension, mimeType = ".png", "image/png"
+		}
+		output := filepath.Join(directory, fmt.Sprintf("frame-%02d%s", index, extension))
+		arguments := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-ss", fmt.Sprintf("%.3f", position)}
+		if sticker {
+			arguments = append(arguments, "-c:v", "libvpx-vp9")
+		}
+		arguments = append(arguments, "-i", input, "-frames:v", "1", "-vf", `scale=min(1280\,iw):-2`, "-q:v", "3", "-y", output)
+		command := exec.CommandContext(ctx, "ffmpeg", arguments...)
 		commandOutput, commandErr := command.CombinedOutput()
 		if commandErr != nil {
 			log.Printf(resources.Get("telegram.log.frame_failed"), index, commandErr, strings.TrimSpace(string(commandOutput)))
@@ -570,7 +618,7 @@ func extractVideoFrames(ctx context.Context, data []byte, name string, count int
 		}
 		frame, readErr := os.ReadFile(output)
 		if readErr == nil {
-			frames = append(frames, llm.Image{MIME: "image/jpeg", Data: frame})
+			frames = append(frames, llm.Image{MIME: mimeType, Data: frame})
 		}
 	}
 	if len(frames) == 0 {
@@ -580,6 +628,8 @@ func extractVideoFrames(ctx context.Context, data []byte, name string, count int
 }
 
 func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, video bool) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
 	directory, err := os.MkdirTemp("", "nyande-whisper-*")
 	if err != nil {
 		return "", err
@@ -599,21 +649,32 @@ func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, video
 		}
 		input = audio
 	}
-	arguments := []string{input, "--model", b.cfg.WhisperModel, "--output_dir", directory, "--output_format", "txt"}
+	arguments := []string{input, "--model", firstString(b.cfg.WhisperModel, "base"), "--output_dir", directory,
+		"--output_format", "txt", "--task", "transcribe", "--fp16", "False", "--verbose", "False"}
 	if language := strings.TrimSpace(b.cfg.WhisperLanguage); language != "" && !strings.EqualFold(language, "auto") {
 		arguments = append(arguments, "--language", language)
 	}
-	command := exec.CommandContext(ctx, b.cfg.WhisperPath, arguments...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf(resources.Get("telegram.error.whisper_failed"), err, strings.TrimSpace(string(output)))
+	command := exec.CommandContext(ctx, firstString(b.cfg.WhisperPath, "whisper"), arguments...)
+	// Whisper may print recognized speech. Do not retain or log that output.
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", fmt.Errorf(resources.Get("telegram.error.whisper_failed"), err, "")
 	}
 	textFiles, _ := filepath.Glob(filepath.Join(directory, "*.txt"))
 	if len(textFiles) == 0 {
 		return "", errors.New(resources.Get("telegram.error.transcript_empty"))
 	}
 	transcript, err := os.ReadFile(textFiles[0])
-	return strings.TrimSpace(string(transcript)), err
+	if err != nil {
+		return "", err
+	}
+	text := strings.TrimSpace(string(transcript))
+	if text == "" {
+		return "", errors.New(resources.Get("telegram.error.transcript_empty"))
+	}
+	return text, nil
 }
 
 func safeExtension(name, fallback string) string {

@@ -16,6 +16,7 @@ LLM assistant on both platforms.
 - compresses oversized downloaded videos when possible;
 - works with OpenRouter and other OpenAI-compatible APIs;
 - sends photos, selected video frames, and audio/video transcripts to the LLM;
+- reads Telegram stickers, including their visible lettering, and answers voice messages;
 - restores the entire cached album when a user replies to one of the files
   previously sent by the bot;
 - provides the LLM with `current_time` and optional `web_search` tools;
@@ -186,6 +187,37 @@ the selected reaction in the chat. In Discord, grant **Read Message History** an
 **Add Reactions**. No extra API key or model is needed.
 
 ## LLM and media analysis
+
+### Telegram stickers and voice messages
+
+In a private chat, send a sticker or voice message directly. In groups, send it
+as a reply to the bot, including a reply to its media. To ask about someone else's
+sticker or voice message, reply to it with your question and a configured trigger
+word. Unaddressed group messages keep the existing trigger rules.
+
+With `LLM_VISION_ENABLED=true`, the same `LLM_MODEL` receives the actual sticker
+image and reads visible lettering from it. The associated Telegram emoji is not
+used to infer the sticker's meaning. Static WebP stickers are converted to PNG;
+TGS animations and WebM video stickers are sampled using `LLM_VIDEO_FRAME_COUNT`
+(default 3, maximum 6 frames). If full rendering fails, the bot tries the sticker
+thumbnail and explicitly tells the model that it only has a preview. No separate
+OCR service is required; the configured model must support images.
+
+Voice messages and audio files are transcribed locally by Whisper when
+`WHISPER_ENABLED=true`, then the transcript is sent to the LLM. The updated
+`.env.example` enables transcription; existing `.env` files must be updated
+explicitly. `WHISPER_LANGUAGE=auto` detects the language. Processing has a
+three-minute timeout; disabled transcription, empty speech, download failures
+and recognition errors now produce a useful reply instead of silence.
+
+Both Docker images include the TGS renderer. Whisper is included in `runtime`;
+keep `WHISPER_ENABLED=false` with `runtime-lite` unless you install it separately.
+For native installation, install FFmpeg, Python 3, `rlottie-python[full]==1.3.8`
+and `openai-whisper` in the Python environment used by the bot. `WHISPER_PATH`
+selects the Whisper executable. The first transcription downloads the selected
+Whisper model if it is not cached.
+
+### Documents
 
 Telegram and Discord accept **PDF, DOCX, PPTX, XLSX, ODT, ODS, ODP and ODF**
 attachments, with a caption or a question replying to the document. In DMs, a

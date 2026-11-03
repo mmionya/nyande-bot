@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl ffmpeg poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,id=nyande-uv,target=/root/.cache/uv,sharing=locked \
-    uv pip install --system "yt-dlp[default,curl-cffi]" "bgutil-ytdlp-pot-provider==${BGUTIL_VERSION}"
+    uv pip install --system "yt-dlp[default,curl-cffi]" "bgutil-ytdlp-pot-provider==${BGUTIL_VERSION}" "rlottie-python[full]==1.3.8"
 WORKDIR /app
 RUN useradd --create-home --uid 10001 nyande && mkdir -p /app/data \
 	&& chown -R nyande:nyande /app

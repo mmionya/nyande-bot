@@ -67,6 +67,7 @@ type Message struct {
 	Voice              *Voice             `json:"voice,omitempty"`
 	VideoNote          *VideoNote         `json:"video_note,omitempty"`
 	Document           *Document          `json:"document,omitempty"`
+	Sticker            *Sticker           `json:"sticker,omitempty"`
 	MediaGroupID       string             `json:"media_group_id,omitempty"`
 	SuccessfulPayment  *SuccessfulPayment `json:"successful_payment,omitempty"`
 }
@@ -149,6 +150,18 @@ type Voice struct {
 	Duration     int    `json:"duration,omitempty"`
 	MimeType     string `json:"mime_type,omitempty"`
 	FileSize     int64  `json:"file_size,omitempty"`
+}
+
+type Sticker struct {
+	FileID       string     `json:"file_id"`
+	FileUniqueID string     `json:"file_unique_id,omitempty"`
+	Width        int        `json:"width"`
+	Height       int        `json:"height"`
+	IsAnimated   bool       `json:"is_animated"`
+	IsVideo      bool       `json:"is_video"`
+	Thumbnail    *PhotoSize `json:"thumbnail,omitempty"`
+	Emoji        string     `json:"emoji,omitempty"`
+	FileSize     int64      `json:"file_size,omitempty"`
 }
 
 type VideoNote struct {

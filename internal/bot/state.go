@@ -62,10 +62,11 @@ func (s *State) ChatLock(chatID int64) *sync.Mutex {
 }
 
 type cachedAttachment struct {
-	Kind string
-	Name string
-	MIME string
-	Data []byte
+	Kind          string
+	Name          string
+	MIME          string
+	Data          []byte
+	PreviewFileID string // Telegram sticker thumbnail, used only if rendering fails.
 }
 
 type mediaCache struct {
