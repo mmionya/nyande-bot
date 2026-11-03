@@ -39,7 +39,7 @@ func (b *Bot) conversation(channelID string) *conversation {
 }
 
 func (b *Bot) shouldAnswerLLM(session *discordgo.Session, message *discordgo.Message) bool {
-	if b.llm == nil || !b.llm.Enabled() || b.llmSettings.isDisabled(llmScope(message)) || strings.TrimSpace(message.Content) == "" {
+	if b.llm == nil || !b.llm.Enabled() || b.llmSettings.isDisabled(llmScope(message)) || (strings.TrimSpace(message.Content) == "" && len(documentAttachments(message)) == 0) {
 		return false
 	}
 	if _, command := parseCommand(message.Content, b.cfg.DiscordPrefix); command {
@@ -104,10 +104,17 @@ func (b *Bot) handleLLM(session *discordgo.Session, message *discordgo.Message) 
 		id := session.State.User.ID
 		text = strings.ReplaceAll(strings.ReplaceAll(text, "<@"+id+">", ""), "<@!"+id+">", "")
 	}
-	if strings.TrimSpace(text) == "" {
+	docs, err := b.collectDocuments(ctx, session, message)
+	if err != nil {
+		if sendErr := sendLLMReply(session, message, err.Error()); sendErr != nil {
+			log.Printf(resources.Get("discord.log.llm_reply_failed"), message.ChannelID, sendErr)
+		}
+		return
+	}
+	if strings.TrimSpace(text) == "" && len(docs) == 0 {
 		text = resources.Get("discord_llm_greeting")
 	}
-	answer, err := b.llm.Ask(ctx, llm.Request{ChatID: chatID, UserName: message.Author.Username, Text: text})
+	answer, err := b.llm.Ask(ctx, llm.Request{ChatID: chatID, UserName: message.Author.Username, Text: text, Documents: docs})
 	if err != nil {
 		log.Printf(resources.Get("discord.log.llm_request_failed"), message.ChannelID, err)
 		answer = resources.Get("discord_llm_failed")

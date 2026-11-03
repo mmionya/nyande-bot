@@ -16,7 +16,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY --from=ghcr.io/astral-sh/uv:0.12.12 /uv /usr/local/bin/uv
 COPY --from=deno-runtime /deno /usr/local/bin/deno
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl ffmpeg \
+        ca-certificates curl ffmpeg poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,id=nyande-uv,target=/root/.cache/uv,sharing=locked \
     uv pip install --system "yt-dlp[default,curl-cffi]" "bgutil-ytdlp-pot-provider==${BGUTIL_VERSION}"

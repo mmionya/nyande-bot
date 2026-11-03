@@ -167,10 +167,39 @@ on servers, when mentioned, replied to, or invoked with `LLM_TRIGGER_WORDS`.
 Media links and commands take priority. History and cooldown are scoped to each
 channel; `!reset` clears that channel's conversation history. Discord history is
 stored in `LLM_HISTORY_FILE` with `.discord` appended, separately from Telegram.
-Long replies are split into messages. Media analysis, long-term memory,
+Long replies are split into messages. Document reading is supported on both platforms.
+Photo/video/audio analysis, long-term memory,
 application tools, moderation, payments, and games remain Telegram features.
 
 ## LLM and media analysis
+
+Telegram and Discord accept **PDF, DOCX, PPTX, XLSX, ODT, ODS, ODP and ODF**
+attachments, with a caption or a question replying to the document. In DMs, a
+document without a caption gets a brief summary. Group/server trigger rules still
+apply. The current message's attachments take precedence over replied attachments.
+
+The model receives extracted text, including tables, sheet names and slide
+boundaries. With `LLM_VISION_ENABLED=true`, embedded raster pictures in Office and
+OpenDocument files are also sent as images in the **same request to `LLM_MODEL`**.
+PDF pages are rendered to images so the model can see embedded pictures, diagrams
+and scans. The configured model must accept image input; a separate vision model
+is not required. With vision disabled, only the text layer is available.
+
+Limits: 20 MiB per file (or a lower `MAX_FILE_SIZE`), 4 documents per Discord
+message, 40,000 extracted characters per document and 80,000 per request. Up to
+6 pictures or the first 6 PDF pages per document are sent, with 12 images total
+per request, resized to at most 1600 pixels on the longest side. The model is told
+when text or images are omitted. Office vector drawings/charts and SVG/EMF/WMF
+pictures are not rendered; embedded PNG/JPEG/GIF/WebP/BMP/TIFF pictures are supported.
+Spreadsheet cells include raw stored values and formulas, not recalculated or
+formatted values. Document text/images are request-only; reply to the original
+file to ask another question about it. Corrupt, encrypted and oversized files
+produce an error instead of being silently ignored.
+
+PDF support requires `poppler-utils` (`pdftotext`, `pdfinfo`, `pdftoppm`), included
+in both Docker runtime images. Native installations can use
+`sudo apt-get install poppler-utils`. Office/OpenDocument extraction runs in Go;
+LibreOffice and additional Python packages are not needed.
 
 Example OpenRouter configuration:
 

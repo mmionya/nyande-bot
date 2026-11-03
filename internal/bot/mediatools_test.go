@@ -200,7 +200,7 @@ func TestMessageHasMedia(t *testing.T) {
 	if !messageHasMedia(&telegram.Message{Document: &telegram.Document{MimeType: "video/mp4"}}) {
 		t.Error("video Document should be detected as media")
 	}
-	if messageHasMedia(&telegram.Message{Document: &telegram.Document{MimeType: "application/pdf"}}) {
-		t.Error("pdf Document should not be detected as media")
+	if !messageHasMedia(&telegram.Message{Document: &telegram.Document{MimeType: "application/pdf"}}) {
+		t.Error("pdf Document should be detected as media")
 	}
 }

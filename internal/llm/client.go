@@ -18,6 +18,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/documents"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -39,6 +40,7 @@ type Request struct {
 	ReplyContext string // Request-only quoted context; excluded from conversation history.
 	Images       []Image
 	Transcripts  []string
+	Documents    []documents.Document // Request-only attachment context, excluded from history.
 	Memories     []Memory
 	Tools        []Tool
 }
@@ -165,6 +167,8 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 			text = resources.Get("llm.prompt.images_only")
 		case len(request.Transcripts) > 0:
 			text = resources.Get("llm.prompt.audio_only")
+		case len(request.Documents) > 0:
+			text = resources.Get("llm.prompt.documents_only")
 		default:
 			return "", errors.New(resources.Get("llm.error.empty_request"))
 		}
@@ -180,13 +184,16 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	}
 
 	requestText := userText
+	documentText, documentImages := documentContext(request.Documents, 12-len(request.Images))
+	requestText += documentText
 	if request.ReplyContext != "" {
 		requestText += "\n\n" + request.ReplyContext
 	}
 	var content any = requestText
-	if len(request.Images) > 0 {
+	images := append(append([]Image(nil), request.Images...), documentImages...)
+	if len(images) > 0 {
 		parts := []map[string]any{{"type": "text", "text": requestText}}
-		for _, image := range request.Images {
+		for _, image := range images {
 			if len(image.Data) == 0 {
 				continue
 			}

@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/mmionya/nyande-bot/internal/documents"
 	"github.com/mmionya/nyande-bot/internal/downloader"
 	"github.com/mmionya/nyande-bot/internal/llm"
 	"github.com/mmionya/nyande-bot/internal/logutil"
@@ -193,11 +194,27 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
 		log.Printf(resources.Get("telegram.log.media_collection_failed"), err)
+		if hasDocument(message) {
+			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("documents.error.download"), message.MessageID, nil)
+			return sendErr
+		}
 	}
 	images := make([]llm.Image, 0)
 	transcripts := make([]string, 0)
+	var docs []documents.Document
 	for _, attachment := range attachments {
 		switch attachment.Kind {
+		case "document":
+			imageLimit := 0
+			if b.cfg.LLMVision {
+				imageLimit = 6
+			}
+			doc, docErr := documents.Read(ctx, attachment.Name, attachment.MIME, attachment.Data, imageLimit)
+			if docErr != nil {
+				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Format("documents.error.read", map[string]any{"name": attachment.Name, "error": docErr}), message.MessageID, nil)
+				return sendErr
+			}
+			docs = append(docs, doc)
 		case "photo":
 			if b.cfg.LLMVision {
 				images = append(images, llm.Image{MIME: attachment.MIME, Data: attachment.Data})
@@ -233,7 +250,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	if len(images) > 12 {
 		images = images[:12]
 	}
-	if text == "" && len(images) == 0 && len(transcripts) == 0 {
+	if text == "" && len(images) == 0 && len(transcripts) == 0 && len(docs) == 0 {
 		if err != nil && isFileTooBig(err) {
 			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
 				resources.Get("telegram.media.file_too_large"),
@@ -247,6 +264,9 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	}
 	var mediaSpecs []string
 	for _, att := range attachments {
+		if att.Kind == "document" {
+			continue
+		}
 		if spec, err := inspectMedia(ctx, att); err == nil && spec != "" {
 			mediaSpecs = append(mediaSpecs, spec)
 		}
@@ -270,6 +290,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 		ChatID: message.Chat.ID, UserName: userName, Text: text,
 		ReplyContext: replyContext(message),
 		Images:       images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,
+		Documents: docs,
 	})
 	if err != nil {
 		b.state.LLMErrors.Add(1)
@@ -339,8 +360,10 @@ func isTriggerWordCharacter(character rune) bool {
 
 func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Message) ([]cachedAttachment, error) {
 	if !messageHasMedia(message) && message.ReplyToMessage != nil {
-		if cached := b.media.Get(message.Chat.ID, message.ReplyToMessage.MessageID); len(cached) > 0 {
-			return cached, nil
+		if b.media != nil {
+			if cached := b.media.Get(message.Chat.ID, message.ReplyToMessage.MessageID); len(cached) > 0 {
+				return cached, nil
+			}
 		}
 		message = message.ReplyToMessage
 	}
@@ -413,6 +436,8 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 		mime := strings.ToLower(firstString(message.Document.MimeType, "application/octet-stream"))
 		kind := ""
 		switch {
+		case documents.Supported(message.Document.FileName, mime):
+			kind = "document"
 		case strings.HasPrefix(mime, "image/"):
 			kind = "photo"
 		case strings.HasPrefix(mime, "video/"):
@@ -437,7 +462,11 @@ func (b *Bot) collectLLMAttachments(ctx context.Context, message *telegram.Messa
 			combined = errors.Join(combined, fmt.Errorf(resources.Get("telegram.error.media_too_large"), descriptor.name, formatFileSize(descriptor.fileSize)))
 			continue
 		}
-		data, filePath, err := b.telegram.DownloadFile(ctx, descriptor.fileID, b.cfg.MaxFileSize)
+		maxSize := b.cfg.MaxFileSize
+		if descriptor.kind == "document" && (maxSize <= 0 || maxSize > documents.MaxFileSize) {
+			maxSize = documents.MaxFileSize
+		}
+		data, filePath, err := b.telegram.DownloadFile(ctx, descriptor.fileID, maxSize)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "file is too big") {
 				err = fmt.Errorf(resources.Get("telegram.error.download_too_large"), descriptor.name, err)
@@ -466,9 +495,19 @@ func messageHasMedia(message *telegram.Message) bool {
 	}
 	if message.Document != nil {
 		mime := strings.ToLower(message.Document.MimeType)
-		return strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "audio/")
+		return documents.Supported(message.Document.FileName, mime) || strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "audio/")
 	}
 	return false
+}
+
+func hasDocument(message *telegram.Message) bool {
+	if message == nil {
+		return false
+	}
+	if !messageHasMedia(message) {
+		message = message.ReplyToMessage
+	}
+	return message != nil && message.Document != nil && documents.Supported(message.Document.FileName, message.Document.MimeType)
 }
 
 func (b *Bot) isMentioned(message *telegram.Message) bool {
