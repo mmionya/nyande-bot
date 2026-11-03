@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,13 +67,33 @@ func TestStickerRendering(t *testing.T) {
 	}
 }
 
+func TestTGSConfiguredPython(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil || exec.Command(python, "-c", "import rlottie_python, PIL").Run() != nil {
+		t.Skip("rlottie-python[full] unavailable")
+	}
+	custom := filepath.Join(t.TempDir(), "sticker-python")
+	if err := os.Symlink(python, custom); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir()) // The default interpreter is deliberately unavailable.
+	b := concurrentTestBot()
+	b.cfg.StickerPythonPath = custom
+	frames, _, err := b.readSticker(context.Background(), cachedAttachment{
+		Kind: "sticker", Name: "sticker.tgs", Data: stickerFixture(t, "tgs"),
+	})
+	if err != nil || len(frames) != 3 {
+		t.Fatalf("custom Python did not render the sticker: frames=%d err=%v", len(frames), err)
+	}
+}
+
 func TestTGSRejectsUnboundedAndExternalResources(t *testing.T) {
 	for _, data := range []string{`{"w":999999,"h":96,"ip":0,"op":30}`, `{"w":96,"h":96,"ip":0,"op":999999}`, `{"w":96,"h":96,"ip":0,"op":30,"assets":[{"p":"/etc/passwd"}]}`, strings.Repeat(" ", 4*1024*1024+1)} {
 		var out bytes.Buffer
 		w := gzip.NewWriter(&out)
 		w.Write([]byte(data))
 		w.Close()
-		if _, err := renderTGS(context.Background(), out.Bytes(), 3); err == nil {
+		if _, err := renderTGS(context.Background(), out.Bytes(), 3, ""); err == nil {
 			t.Fatal("unsafe TGS accepted")
 		}
 	}

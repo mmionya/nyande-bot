@@ -149,6 +149,26 @@ DOCKER_TARGET=runtime-lite
 WHISPER_ENABLED=false
 ```
 
+### Updating an existing systemd installation
+
+For the root-owned `nyande-bot.service` installation with working directory
+`/root/nyande-bot` and binary `/usr/local/bin/nyande-bot`, run
+`bash scripts/update-systemd.sh` as root on Debian/Ubuntu x86_64. An optional
+full commit SHA pins the source revision; the default is `main`.
+
+The updater builds in a temporary checkout with one compiler worker, installs
+Poppler/FFmpeg and an isolated Python environment for animated stickers, and
+keeps the existing working directory, `.env`, data and memory limits intact.
+It disables Whisper through an additional systemd environment file; it does
+not install Whisper or PyTorch. Existing vision/model settings still apply.
+Allow at least 2 GiB of free space for the temporary build.
+
+The existing bot stays running until the replacement is ready. The updater
+backs up the binary and its managed systemd settings, checks the new process
+for 30 seconds, and rolls back on startup failure. It prints a command for
+manual rollback under `/var/backups/nyande-bot/` as well. OS dependency packages
+and the isolated sticker environment remain installed after rollback.
+
 ## Discord setup
 
 Create an application and bot in the
@@ -213,7 +233,9 @@ and recognition errors now produce a useful reply instead of silence.
 Both Docker images include the TGS renderer. Whisper is included in `runtime`;
 keep `WHISPER_ENABLED=false` with `runtime-lite` unless you install it separately.
 For native installation, install FFmpeg, Python 3, `rlottie-python[full]==1.3.8`
-and `openai-whisper` in the Python environment used by the bot. `WHISPER_PATH`
+and `openai-whisper` in the Python environment used by the bot. Use
+`STICKER_PYTHON_PATH=/path/to/venv/bin/python3` for a dedicated TGS renderer
+environment without changing the service's `PATH`. `WHISPER_PATH`
 selects the Whisper executable. The first transcription downloads the selected
 Whisper model if it is not cached.
 

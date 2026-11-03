@@ -67,6 +67,7 @@ type Config struct {
 	LLMTimezone            string
 	LLMVision              bool
 	LLMVideoFrames         int
+	StickerPythonPath      string
 	WhisperEnabled         bool
 	WhisperPath            string
 	WhisperModel           string
@@ -140,6 +141,7 @@ func Load() (Config, error) {
 		LLMTimezone:            firstNonEmpty(os.Getenv("LLM_TIMEZONE"), os.Getenv("LLM_TIMEZONE_OFFSET"), "Asia/Almaty"),
 		LLMVision:              envBool("LLM_VISION_ENABLED", true),
 		LLMVideoFrames:         envInt("LLM_VIDEO_FRAME_COUNT", 3, 1, 6),
+		StickerPythonPath:      envString("STICKER_PYTHON_PATH", "python3"),
 		WhisperEnabled:         envBool("WHISPER_ENABLED", false),
 		WhisperPath:            envString("WHISPER_PATH", "whisper"),
 		WhisperModel:           envString("WHISPER_MODEL_SIZE", "base"),

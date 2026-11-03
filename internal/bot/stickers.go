@@ -77,7 +77,7 @@ func (b *Bot) readSticker(ctx context.Context, attachment cachedAttachment) ([]l
 	var err error
 	switch filepath.Ext(attachment.Name) {
 	case ".tgs":
-		images, err = renderTGS(renderCtx, attachment.Data, count)
+		images, err = renderTGS(renderCtx, attachment.Data, count, b.cfg.StickerPythonPath)
 	case ".webm":
 		images, err = extractVideoFramesWithFormat(renderCtx, attachment.Data, attachment.Name, count, true)
 	default:
@@ -123,7 +123,7 @@ func stickerImage(data []byte) ([]llm.Image, error) {
 	return []llm.Image{{MIME: "image/png", Data: output.Bytes()}}, nil
 }
 
-func renderTGS(ctx context.Context, data []byte, count int) ([]llm.Image, error) {
+func renderTGS(ctx context.Context, data []byte, count int, pythonPath string) ([]llm.Image, error) {
 	r, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
@@ -163,7 +163,7 @@ func renderTGS(ctx context.Context, data []byte, count int) ([]llm.Image, error)
 	if err := os.WriteFile(input, animation, 0o600); err != nil {
 		return nil, err
 	}
-	command := exec.CommandContext(ctx, "python3", "-c", renderTGSScript, input, dir, strconv.Itoa(count))
+	command := exec.CommandContext(ctx, firstString(pythonPath, "python3"), "-c", renderTGSScript, input, dir, strconv.Itoa(count))
 	if err := command.Run(); err != nil {
 		return nil, fmt.Errorf("render TGS: %w", err)
 	}
