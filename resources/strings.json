@@ -1,4 +1,10 @@
 {
+  "tool.reaction.description": "Add one emoji reaction to the current user message or its direct reply parent. You may react spontaneously when a reaction fits the conversation, or when the user asks. Use reactions sparingly, not on every message. For spontaneous reactions use target=current; use target=reply when the user asks to react to the message they replied to. Choose an emoji from the allowed list. At most one attempt per target per request. A reaction does not replace an answer to a substantive question. Never claim success unless the tool confirms it; if it fails, explain briefly when relevant and continue answering normally. No custom, premium or paid reactions.",
+  "tool.reaction.target": "current (default): the user message that triggered this answer. reply: the message that user message directly replies to; available only when present in the same chat/channel.",
+  "tool.reaction.invalid": "Reaction not sent. Choose one allowed emoji and target=current, or target=reply only when available. No other arguments or message/chat IDs are accepted.",
+  "tool.reaction.done": "Reaction {emoji} successfully set on target={target}.",
+  "tool.reaction.failed": "Reaction was not confirmed. The chat may restrict this emoji or reactions, the bot may lack permissions, the message may be unavailable, or the request may have failed. Do not claim success or retry this target during this request.",
+  "tool.reaction.already_attempted": "This target was already attempted; no new reaction was sent. Previous outcome: {outcome}",
   "documents.warning.images_disabled": "Document images were not sent because vision is disabled or the image budget is exhausted. Only extracted text is available; do not claim to see embedded pictures.",
   "documents.warning.embedded_images": "Included {included} of {total} embedded pictures. Others were omitted because of image limits or unsupported/corrupt image formats. Do not claim to have seen omitted images.",
   "documents.error.too_large": "Документ слишком большой. Лимит файла — 20 МиБ; содержимое распакованного документа тоже ограничено.",

@@ -19,6 +19,7 @@ LLM assistant on both platforms.
 - restores the entire cached album when a user replies to one of the files
   previously sent by the bot;
 - provides the LLM with `current_time` and optional `web_search` tools;
+- lets the LLM add emoji reactions to messages in Telegram and Discord;
 - imports class timetables from screenshots or text and sends private Telegram
   reminders, including alternating study weeks;
 - optionally deletes unsupported links posted by non-administrators in groups;
@@ -166,9 +167,23 @@ on servers, when mentioned, replied to, or invoked with `LLM_TRIGGER_WORDS`.
 Media links and commands take priority. History and cooldown are scoped to each
 channel; `!reset` clears that channel's conversation history. Discord history is
 stored in `LLM_HISTORY_FILE` with `.discord` appended, separately from Telegram.
-Long replies are split into messages. Document reading is supported on both platforms.
+Long replies are split into messages. Document reading and LLM reactions are supported on both platforms.
 Photo/video/audio analysis, long-term memory,
-application tools, moderation, payments, and games remain Telegram features.
+other application tools, moderation, payments, and games remain Telegram features.
+
+## LLM reactions
+
+The `react_to_message` tool lets the LLM choose a standard emoji reaction during
+an ordinary conversation, or when asked to react. For example, reply to a message
+with “мяу, поставь сердечко на это сообщение”. The tool can target the current
+user message or its direct reply parent in the same chat/channel. It allows one
+attempt per target per LLM request and reports platform failures to the model.
+Custom and paid reactions are not supported.
+
+Existing LLM triggers, cooldowns and per-chat enable/disable settings still apply;
+this does not start extra LLM requests for every group message. Telegram must allow
+the selected reaction in the chat. In Discord, grant **Read Message History** and
+**Add Reactions**. No extra API key or model is needed.
 
 ## LLM and media analysis
 

@@ -114,7 +114,9 @@ func (b *Bot) handleLLM(session *discordgo.Session, message *discordgo.Message) 
 	if strings.TrimSpace(text) == "" && len(docs) == 0 {
 		text = resources.Get("discord_llm_greeting")
 	}
-	answer, err := b.llm.Ask(ctx, llm.Request{ChatID: chatID, UserName: message.Author.Username, Text: text, Documents: docs})
+	answer, err := b.llm.Ask(ctx, llm.Request{ChatID: chatID, UserName: message.Author.Username, Text: text, Documents: docs,
+		Tools: []llm.Tool{reactionTool(session, message)},
+	})
 	if err != nil {
 		log.Printf(resources.Get("discord.log.llm_request_failed"), message.ChannelID, err)
 		answer = resources.Get("discord_llm_failed")
