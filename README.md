@@ -1,10 +1,9 @@
-# nyande-bot — Go edition
+# nyande-bot
 
 **English** | [Русский](README.ru.md)
 
 `nyande-bot` is a Telegram and Discord media downloader with an optional
-LLM assistant on both platforms. This Go edition incorporates useful additions from the
-original Python and Rust versions.
+LLM assistant on both platforms.
 
 ## Features
 
