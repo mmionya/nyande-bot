@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/disgoorg/disgolink/v4/lavalink"
 	"github.com/disgoorg/snowflake/v2"
 
+	"github.com/mmionya/nyande-bot/internal/music"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -80,37 +80,7 @@ func (m *musicService) close() {
 	m.backend.close()
 }
 
-func musicIdentifier(query string) (string, error) {
-	query = strings.TrimSpace(query)
-	if query == "" || len(query) > 500 {
-		return "", errors.New(resources.Get("music.error.invalid_query"))
-	}
-	if strings.Contains(query, "://") {
-		u, err := url.Parse(query)
-		if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
-			return "", errors.New(resources.Get("music.error.invalid_url"))
-		}
-		host := strings.ToLower(u.Hostname())
-		if host != "youtu.be" && host != "youtube.com" && !strings.HasSuffix(host, ".youtube.com") && host != "soundcloud.com" && !strings.HasSuffix(host, ".soundcloud.com") && host != "bandcamp.com" && !strings.HasSuffix(host, ".bandcamp.com") {
-			return "", errors.New(resources.Get("music.error.unsupported_host"))
-		}
-		return u.String(), nil
-	}
-	if source, text, ok := strings.Cut(query, ":"); ok {
-		prefixes := map[string]string{
-			"yt": "ytsearch:", "ytm": "ytmsearch:",
-			"sc": "scsearch:", "bc": "bcsearch:",
-		}
-		if prefix, exists := prefixes[strings.ToLower(source)]; exists {
-			text = strings.TrimSpace(text)
-			if text == "" {
-				return "", errors.New(resources.Get("music.error.empty_query"))
-			}
-			return prefix + text, nil
-		}
-	}
-	return "ytsearch:" + query, nil
-}
+func musicIdentifier(query string) (string, error) { return music.Identifier(query) }
 
 func (b *Bot) getMusic(session *discordgo.Session) (*musicService, error) {
 	b.musicMu.Lock()

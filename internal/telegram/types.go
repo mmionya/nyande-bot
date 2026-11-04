@@ -218,12 +218,15 @@ type ChatMember struct {
 }
 
 type Upload struct {
-	Kind    string
-	Name    string
-	MIME    string
-	Data    []byte
-	URL     string
-	Caption string
+	Kind      string
+	Name      string
+	MIME      string
+	Data      []byte
+	URL       string
+	Caption   string
+	Title     string
+	Performer string
+	Duration  int
 }
 
 type APIError struct {

@@ -293,6 +293,8 @@ func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, re
 		method = "sendVideoNote"
 	case "voice":
 		method = "sendVoice"
+	case "audio":
+		method = "sendAudio"
 	default:
 		field = "document"
 		method = "sendDocument"
@@ -304,6 +306,17 @@ func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, re
 		}
 		if field == "video" {
 			payload["supports_streaming"] = true
+		}
+		if field == "audio" {
+			if upload.Title != "" {
+				payload["title"] = upload.Title
+			}
+			if upload.Performer != "" {
+				payload["performer"] = upload.Performer
+			}
+			if upload.Duration > 0 {
+				payload["duration"] = upload.Duration
+			}
 		}
 		if replyTo != 0 {
 			payload["reply_parameters"] = map[string]any{"message_id": replyTo, "allow_sending_without_reply": true}
@@ -321,6 +334,17 @@ func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, re
 	}
 	if field == "video" {
 		_ = writer.WriteField("supports_streaming", "true")
+	}
+	if field == "audio" {
+		if upload.Title != "" {
+			_ = writer.WriteField("title", upload.Title)
+		}
+		if upload.Performer != "" {
+			_ = writer.WriteField("performer", upload.Performer)
+		}
+		if upload.Duration > 0 {
+			_ = writer.WriteField("duration", strconv.Itoa(upload.Duration))
+		}
 	}
 	if replyTo != 0 {
 		value, _ := json.Marshal(map[string]any{"message_id": replyTo, "allow_sending_without_reply": true})

@@ -50,6 +50,8 @@ type Bot struct {
 	reminders  *reminders.Store
 	schedules  *schedules.Store
 	quotes     *quotes.Store
+	musicMu    sync.Mutex
+	music      *telegramMusic
 
 	updateLocks     sync.Map
 	adminMu         sync.Mutex
@@ -197,6 +199,8 @@ func (b *Bot) Run(ctx context.Context) error {
 	go b.scheduleLoop(ctx)
 	commands := []map[string]string{
 		{"command": "help", "description": resources.Get("telegram.command.help")},
+		{"command": "search", "description": resources.Get("telegram.command.search")},
+		{"command": "play", "description": resources.Get("telegram.command.play")},
 		{"command": "schedule", "description": resources.Get("telegram.command.schedule")},
 		{"command": "botban", "description": resources.Get("telegram.command.botban")},
 		{"command": "botunban", "description": resources.Get("telegram.command.botunban")},
@@ -281,7 +285,36 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 			mediaUpdate = false
 		}
 	}
-	unlock := b.lockUpdates(chatID, mediaUpdate)
+	musicUpdate := false
+	if update.Message != nil {
+		command, _, ok := parseCommand(text, b.identity.Username)
+		if ok && (command == "search" || command == "music" || command == "play") {
+			musicUpdate = true
+		}
+	}
+	if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "music:") {
+		musicUpdate = true
+	}
+	var unlock func()
+	if musicUpdate {
+		lock := b.updateLock(chatID, true)
+		if !lock.TryLock() {
+			if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
+				return err
+			}
+			if b.silentModeration(chatID) {
+				return nil
+			}
+			if update.CallbackQuery != nil {
+				return b.telegram.AnswerCallback(ctx, update.CallbackQuery.ID, resources.Get("telegram.music.busy"), "", true)
+			}
+			_, err := b.telegram.SendMessage(ctx, chatID, resources.Get("telegram.music.busy"), update.Message.MessageID, nil)
+			return err
+		}
+		unlock = lock.Unlock
+	} else {
+		unlock = b.lockUpdates(chatID, mediaUpdate)
+	}
 	defer unlock()
 
 	if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
@@ -367,6 +400,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
+		case "search", "music", "play":
+			return b.musicCommand(ctx, message, command, arguments)
 		case "schedule":
 			return b.scheduleCommand(ctx, message, arguments)
 		case "botban", "botunban":
@@ -560,6 +595,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *telegram.CallbackQue
 		return nil
 	}
 	switch {
+	case strings.HasPrefix(callback.Data, "music:"):
+		return b.handleMusicCallback(ctx, callback)
 	case strings.HasPrefix(callback.Data, "sch:"):
 		return b.handleScheduleCallback(ctx, callback)
 	case strings.HasPrefix(callback.Data, "donate:"):
@@ -710,14 +747,18 @@ func (b *Bot) reminderLoop(ctx context.Context) {
 // Serialize downloads separately from conversation updates in each chat.
 // Silent activation, bans and link permissions take both, normal then media.
 func (b *Bot) lockUpdates(chatID int64, media bool) func() {
+	lock := b.updateLock(chatID, media)
+	lock.Lock()
+	return lock.Unlock
+}
+
+func (b *Bot) updateLock(chatID int64, media bool) *sync.Mutex {
 	key := struct {
 		chatID int64
 		media  bool
 	}{chatID, media}
 	value, _ := b.updateLocks.LoadOrStore(key, &sync.Mutex{})
-	lock := value.(*sync.Mutex)
-	lock.Lock()
-	return lock.Unlock
+	return value.(*sync.Mutex)
 }
 
 func (b *Bot) deliverReminder(ctx context.Context, r reminders.Reminder) {

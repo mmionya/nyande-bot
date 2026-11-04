@@ -39,7 +39,7 @@ func TestGetUpdatesIncludesEditedMessages(t *testing.T) {
 }
 
 func TestRetriesDoNotDuplicateUnconfirmedSends(t *testing.T) {
-	for _, method := range []string{"sendDocument", "sendMediaGroup", "sendMessage", "getMe"} {
+	for _, method := range []string{"sendAudio", "sendDocument", "sendMediaGroup", "sendMessage", "getMe"} {
 		for _, failure := range []string{"transport", "read", "invalid JSON", "server error", "rate limited"} {
 			t.Run(method+"/"+failure, func(t *testing.T) {
 				calls := 0

@@ -208,6 +208,24 @@ the selected reaction in the chat. In Discord, grant **Read Message History** an
 
 ## LLM and media analysis
 
+### Telegram music search
+
+Use `/search artist or title` (also `/music`) to browse up to 20 tracks, five
+per page. Choose YouTube, YouTube Music, SoundCloud or Bandcamp with the source
+buttons, then tap a track to receive an MP3 with Telegram's audio player.
+
+`/play title` sends the first result; `/play https://…` accepts a supported track
+link, and `/play 2` sends the second result from your latest search in this chat.
+The same source prefixes as Discord work: `yt:`, `ytm:`, `sc:` and `bc:`.
+For example: `/search sc: ambient`. Search buttons belong to their requester
+and expire after ten minutes.
+
+This uses the existing `YTDLP_PATH`, cookie settings and `FFMPEG_PATH`; it works
+with the LLM and Whisper disabled. Individual tracks must be at most 30 minutes;
+live streams are excluded. MP3 uploads respect `MAX_FILE_SIZE` and Telegram's
+50 MiB cap. Music extraction is serialized across Telegram and Discord, and
+temporary files are removed after downloading or failure.
+
 ### Telegram stickers and voice messages
 
 In a private chat, send a sticker or voice message directly. In groups, send it

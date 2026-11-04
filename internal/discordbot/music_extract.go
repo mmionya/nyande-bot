@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -16,8 +15,8 @@ import (
 
 	"github.com/disgoorg/disgolink/v4/lavalink"
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/music"
 	"github.com/mmionya/nyande-bot/resources"
-	"golang.org/x/net/html"
 )
 
 // The gate is shared by searches and playback URL resolution: only one Python
@@ -80,6 +79,11 @@ func (e *musicExtractor) args() []string {
 	return args
 }
 func (e *musicExtractor) run(ctx context.Context, args ...string) ([]byte, error) {
+	release, err := music.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := e.command(ctx, e.cfg.YTDownloadPath, append(e.args(), args...)...)
 	configureMusicProcess(cmd)
 	cmd.WaitDelay = 2 * time.Second
@@ -93,133 +97,47 @@ func (e *musicExtractor) run(ctx context.Context, args ...string) ([]byte, error
 	return out.Bytes(), nil
 }
 
-type extractedMusic struct {
-	ID         string  `json:"id"`
-	Title      string  `json:"title"`
-	Track      string  `json:"track"`
-	Artist     string  `json:"artist"`
-	Uploader   string  `json:"uploader"`
-	Duration   float64 `json:"duration"`
-	URL        string  `json:"url"`
-	WebpageURL string  `json:"webpage_url"`
-	Thumbnail  string  `json:"thumbnail"`
-	Thumbnails []struct {
-		URL string `json:"url"`
-	} `json:"thumbnails"`
-	Live    bool              `json:"is_live"`
-	Headers map[string]string `json:"http_headers"`
-	Entries []extractedMusic  `json:"entries"`
-}
+type extractedMusic = music.Metadata
 
 func musicSearchTarget(identifier string) (string, string, error) {
-	return musicSearchTargetLimit(identifier, 20)
+	return music.SearchTarget(identifier, 20)
 }
 func musicSearchTargetLimit(identifier string, limit int) (string, string, error) {
-	if strings.HasPrefix(identifier, "https://") {
-		valid, err := musicIdentifier(identifier)
-		return valid, "", err
-	}
-	prefix, query, ok := strings.Cut(identifier, ":")
-	if !ok || strings.TrimSpace(query) == "" {
-		return "", "", errors.New(resources.Get("music.error.invalid_search"))
-	}
-	switch prefix {
-	case "ytsearch":
-		return fmt.Sprintf("ytsearch%d:%s", limit, query), "youtube", nil
-	case "ytmsearch":
-		return "https://music.youtube.com/search?q=" + url.QueryEscape(query) + "#songs", "youtube music", nil
-	case "scsearch":
-		return fmt.Sprintf("scsearch%d:%s", limit, query), "soundcloud", nil
-	case "bcsearch":
-		return "https://bandcamp.com/search?item_type=t&q=" + url.QueryEscape(query), "bandcamp", nil
-	default:
-		return "", "", errors.New(resources.Get("music.error.unsupported_search"))
-	}
+	return music.SearchTarget(identifier, limit)
 }
 func (e *musicExtractor) load(ctx context.Context, identifier string) ([]lavalink.Track, error) {
 	return e.loadLimit(ctx, identifier, 20)
 }
 func (e *musicExtractor) loadLimit(ctx context.Context, identifier string, limit int) ([]lavalink.Track, error) {
-	limit = max(1, min(limit, 20))
-	target, source, err := musicSearchTargetLimit(identifier, limit)
-	if err != nil {
-		return nil, err
-	}
-	if err = e.acquire(ctx); err != nil {
+	if err := e.acquire(ctx); err != nil {
 		return nil, err
 	}
 	defer func() { <-e.gate }()
-	if strings.HasPrefix(identifier, "bcsearch:") {
-		tracks, err := e.bandcamp(ctx, target)
-		return tracks[:min(len(tracks), limit)], err
-	}
-	data, err := e.run(ctx, "--flat-playlist", "--playlist-end", fmt.Sprint(limit), "--dump-single-json", "--", target)
-	if err != nil {
-		return nil, err
-	}
-	var result extractedMusic
-	if err = json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-	entries := result.Entries
-	if entries == nil {
-		entries = []extractedMusic{result}
-	}
-	tracks := make([]lavalink.Track, 0, min(len(entries), limit))
-	for _, entry := range entries[:min(len(entries), limit)] {
-		if track, ok := extractedTrack(entry, source); ok {
-			tracks = append(tracks, track)
-		}
-	}
-	return tracks, nil
+	tracks, err := music.Search(ctx, identifier, limit, e.run, e.client)
+	return lavalinkTracks(tracks), err
 }
-func extractedTrack(entry extractedMusic, source string) (lavalink.Track, bool) {
-	page := entry.WebpageURL
-	if page == "" {
-		page = entry.URL
-	}
-	// Flat YouTube results sometimes carry only the video ID.
-	if !strings.Contains(page, "://") && strings.HasPrefix(source, "youtube") && entry.ID != "" {
-		page = "https://www.youtube.com/watch?v=" + url.QueryEscape(entry.ID)
-	}
-	if strings.HasPrefix(page, "http://") {
-		page = "https://" + strings.TrimPrefix(page, "http://")
-	}
-	if _, err := musicIdentifier(page); err != nil || !strings.HasPrefix(page, "https://") {
-		return lavalink.Track{}, false
-	}
-	if source == "" {
-		u, _ := url.Parse(page)
-		switch {
-		case strings.Contains(u.Hostname(), "soundcloud.com"):
-			source = "soundcloud"
-		case strings.Contains(u.Hostname(), "bandcamp.com"):
-			source = "bandcamp"
-		default:
-			source = "youtube"
-		}
-	}
-	title := entry.Title
-	if entry.Track != "" {
-		title = entry.Track
-	}
-	author := entry.Artist
-	if author == "" {
-		author = entry.Uploader
-	}
-	art := entry.Thumbnail
-	if art == "" && len(entry.Thumbnails) > 0 {
-		art = entry.Thumbnails[len(entry.Thumbnails)-1].URL
-	}
-	info := lavalink.TrackInfo{Identifier: entry.ID, Title: truncateMessage(title, 200), Author: truncateMessage(author, 100), URI: &page, SourceName: source, IsStream: entry.Live}
-	if entry.Duration > 0 && entry.Duration < 7*24*3600 {
-		info.Length = lavalink.Duration(entry.Duration * 1000)
-	}
-	if musicURL(art) != "" {
-		info.ArtworkURL = &art
+func lavalinkTrack(track music.Track) lavalink.Track {
+	info := lavalink.TrackInfo{Identifier: track.ID, Title: track.Title, Author: track.Author, URI: &track.URL, SourceName: track.Source, IsStream: track.Live, Length: lavalink.Duration(track.Duration.Milliseconds())}
+	if track.ArtworkURL != "" {
+		info.ArtworkURL = &track.ArtworkURL
 	}
 	encoded, _ := json.Marshal(info)
-	return lavalink.Track{Encoded: string(encoded), Info: info}, true
+	return lavalink.Track{Encoded: string(encoded), Info: info}
+}
+func lavalinkTracks(tracks []music.Track) []lavalink.Track {
+	result := make([]lavalink.Track, 0, len(tracks))
+	for _, track := range tracks {
+		result = append(result, lavalinkTrack(track))
+	}
+	return result
+}
+func extractedTrack(entry extractedMusic, source string) (lavalink.Track, bool) {
+	track, ok := music.FromMetadata(entry, source)
+	return lavalinkTrack(track), ok
+}
+func parseBandcampSearch(data []byte) ([]lavalink.Track, error) {
+	tracks, err := music.ParseBandcampSearch(data)
+	return lavalinkTracks(tracks), err
 }
 
 type musicStream struct {
@@ -252,101 +170,4 @@ func (e *musicExtractor) resolve(ctx context.Context, track lavalink.Track) (mus
 		return musicStream{}, errors.New(resources.Get("music.error.missing_audio_stream"))
 	}
 	return musicStream{URL: info.URL, Headers: info.Headers}, nil
-}
-
-func htmlAttr(n *html.Node, key string) string {
-	for _, a := range n.Attr {
-		if a.Key == key {
-			return a.Val
-		}
-	}
-	return ""
-}
-func htmlClass(n *html.Node, class string) bool {
-	for _, v := range strings.Fields(htmlAttr(n, "class")) {
-		if v == class {
-			return true
-		}
-	}
-	return false
-}
-func htmlText(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return n.Data
-	}
-	var b strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		b.WriteString(htmlText(c))
-	}
-	return strings.Join(strings.Fields(b.String()), " ")
-}
-func walkHTML(n *html.Node, visit func(*html.Node)) {
-	visit(n)
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		walkHTML(c, visit)
-	}
-}
-func (e *musicExtractor) bandcamp(ctx context.Context, target string) ([]lavalink.Track, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; nyande music search)")
-	res, err := e.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(resources.Get("music.error.bandcamp_status"), res.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(res.Body, (1<<20)+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > 1<<20 {
-		return nil, errors.New(resources.Get("music.error.bandcamp_page_too_large"))
-	}
-	if bytes.Contains(data, []byte("Client Challenge")) {
-		return nil, errors.New(resources.Get("music.error.bandcamp_challenge"))
-	}
-	return parseBandcampSearch(data)
-}
-func parseBandcampSearch(data []byte) ([]lavalink.Track, error) {
-	doc, err := html.Parse(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	tracks := make([]lavalink.Track, 0, 20)
-	walkHTML(doc, func(n *html.Node) {
-		if !htmlClass(n, "searchresult") || len(tracks) >= 20 {
-			return
-		}
-		var entry extractedMusic
-		walkHTML(n, func(child *html.Node) {
-			if htmlClass(child, "heading") {
-				entry.Title = htmlText(child)
-				walkHTML(child, func(a *html.Node) {
-					if a.Data == "a" {
-						entry.WebpageURL = htmlAttr(a, "href")
-					}
-				})
-			}
-			if htmlClass(child, "subhead") {
-				entry.Artist = strings.TrimSpace(strings.TrimPrefix(htmlText(child), "by "))
-			}
-			if child.Data == "img" && entry.Thumbnail == "" {
-				entry.Thumbnail = htmlAttr(child, "src")
-			}
-		})
-		u, err := url.Parse(entry.WebpageURL)
-		if err != nil || !strings.HasPrefix(u.Path, "/track/") {
-			return
-		}
-		entry.ID = strings.TrimPrefix(u.Path, "/track/")
-		if track, ok := extractedTrack(entry, "bandcamp"); ok {
-			tracks = append(tracks, track)
-		}
-	})
-	return tracks, nil
 }
