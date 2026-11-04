@@ -360,6 +360,21 @@ func (c *Client) SendUpload(ctx context.Context, chatID int64, upload Upload, re
 	if _, err := part.Write(upload.Data); err != nil {
 		return Message{}, err
 	}
+	if field == "audio" && len(upload.Thumbnail) > 0 {
+		if err := writer.WriteField("thumbnail", "attach://cover"); err != nil {
+			return Message{}, err
+		}
+		coverHeader := make(textproto.MIMEHeader)
+		coverHeader.Set("Content-Disposition", `form-data; name="cover"; filename="cover.jpg"`)
+		coverHeader.Set("Content-Type", "image/jpeg")
+		cover, err := writer.CreatePart(coverHeader)
+		if err != nil {
+			return Message{}, err
+		}
+		if _, err := cover.Write(upload.Thumbnail); err != nil {
+			return Message{}, err
+		}
+	}
 	if err := writer.Close(); err != nil {
 		return Message{}, err
 	}

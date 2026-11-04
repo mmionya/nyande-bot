@@ -227,6 +227,7 @@ type Upload struct {
 	Title     string
 	Performer string
 	Duration  int
+	Thumbnail []byte
 }
 
 type APIError struct {

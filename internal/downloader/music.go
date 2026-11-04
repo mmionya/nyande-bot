@@ -115,7 +115,7 @@ func (d *Downloader) DownloadMusic(ctx context.Context, track music.Track) (Medi
 	defer os.RemoveAll(dir)
 	args := append(d.musicArgs(), "--format", "bestaudio/best", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "128K",
 		"--postprocessor-args", "ExtractAudio+ffmpeg_o:-threads 1", "--match-filters", "!is_live & duration <=? 1800",
-		"--max-filesize", strconv.FormatInt(limit, 10), "--output", filepath.Join(dir, "track.%(ext)s"))
+		"--max-filesize", strconv.FormatInt(limit, 10), "--write-info-json", "--output", filepath.Join(dir, "track.%(ext)s"))
 	args = append(args, "--ffmpeg-location", ffmpeg)
 	args = append(args, "--", page)
 	output, err := runYTDLP(ctx, d.musicExecutable(), args, dir, 2*limit+1024*1024)
@@ -134,9 +134,15 @@ func (d *Downloader) DownloadMusic(ctx context.Context, track music.Track) (Medi
 	if info.Size() > limit {
 		return Media{}, ErrMusicTooLarge
 	}
+	cover, thumbnail := d.musicCover(ctx, dir, track.ArtworkURL)
+	if len(cover) > 0 {
+		if covered, err := embedMusicCover(ctx, ffmpeg, dir, path, cover, limit); err == nil {
+			path = covered
+		}
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Media{}, err
 	}
-	return Media{Kind: "audio", Name: "track.mp3", MIME: "audio/mpeg", Data: data}, nil
+	return Media{Kind: "audio", Name: "track.mp3", MIME: "audio/mpeg", Data: data, Thumbnail: thumbnail}, nil
 }

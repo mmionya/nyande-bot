@@ -327,7 +327,7 @@ func (b *Bot) sendMusic(ctx context.Context, message *telegram.Message, track mu
 	audio, err := b.telegramMusic().download(ctx, track)
 	if err == nil {
 		_, err = b.telegram.SendUpload(ctx, message.Chat.ID, telegram.Upload{Kind: "audio", Name: audio.Name, MIME: audio.MIME, Data: audio.Data,
-			Title: track.Title, Performer: track.Author, Duration: int(track.Duration.Seconds())}, message.MessageID)
+			Title: track.Title, Performer: track.Author, Duration: int(track.Duration.Seconds()), Thumbnail: audio.Thumbnail}, message.MessageID)
 	}
 	if err != nil {
 		key := "telegram.music.download_failed"

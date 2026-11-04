@@ -21,11 +21,12 @@ import (
 )
 
 type Media struct {
-	Kind string
-	Name string
-	MIME string
-	Data []byte
-	URL  string
+	Kind      string
+	Name      string
+	MIME      string
+	Data      []byte
+	URL       string
+	Thumbnail []byte
 }
 
 type Result struct {

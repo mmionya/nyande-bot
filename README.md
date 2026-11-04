@@ -163,6 +163,9 @@ the selected reaction in the chat. In Discord, grant **Read Message History** an
 Use `/search artist or title` (also `/music`) to browse up to 20 tracks, five
 per page. Choose YouTube, YouTube Music, SoundCloud or Bandcamp with the source
 buttons, then tap a track to receive an MP3 with Telegram's audio player.
+When artwork is available, the bot downloads it, embeds a JPEG cover into the
+MP3 without re-encoding the audio, and attaches a thumbnail for Telegram's player.
+A missing or invalid cover does not prevent the song from being sent.
 
 `/play title` sends the first result; `/play https://…` accepts a supported track
 link, and `/play 2` sends the second result from your latest search in this chat.

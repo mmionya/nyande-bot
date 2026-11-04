@@ -42,6 +42,22 @@ func musicTestBot(t *testing.T) (*Bot, *[]musicRequest) {
 			}
 			defer r.MultipartForm.RemoveAll()
 			request.payload = map[string]any{"title": r.FormValue("title"), "performer": r.FormValue("performer"), "duration": r.FormValue("duration")}
+			if reference := r.FormValue("thumbnail"); reference != "" {
+				request.payload["thumbnail"] = reference
+				cover, header, err := r.FormFile("cover")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer cover.Close()
+				data, err := io.ReadAll(cover)
+				if err != nil {
+					t.Fatal(err)
+				}
+				request.payload["cover"] = string(data)
+				if header.Header.Get("Content-Type") != "image/jpeg" {
+					t.Fatal("wrong cover MIME type")
+				}
+			}
 			file, _, err := r.FormFile("audio")
 			if err != nil {
 				t.Fatal(err)
@@ -140,6 +156,25 @@ func TestTelegramMusicSearchSelectAndPlay(t *testing.T) {
 		if audios != 1 {
 			t.Fatalf("sent %d audio messages", audios)
 		}
+	}
+}
+
+func TestTelegramMusicForwardsCoverInAudioUpload(t *testing.T) {
+	b, requests := musicTestBot(t)
+	b.music.download = func(context.Context, music.Track) (downloader.Media, error) {
+		return downloader.Media{Kind: "audio", Name: "song.mp3", MIME: "audio/mpeg", Data: []byte("MP3 test bytes"), Thumbnail: []byte("JPEG cover bytes")}, nil
+	}
+	if err := b.HandleUpdate(context.Background(), musicMessage("/play song")); err != nil {
+		t.Fatal(err)
+	}
+	var audio *musicRequest
+	for i := range *requests {
+		if (*requests)[i].method == "sendAudio" {
+			audio = &(*requests)[i]
+		}
+	}
+	if audio == nil || audio.payload["thumbnail"] != "attach://cover" || audio.payload["cover"] != "JPEG cover bytes" {
+		t.Fatal("downloaded cover was not attached to the audio message")
 	}
 }
 
