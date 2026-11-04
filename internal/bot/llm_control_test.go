@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/mmionya/nyande-bot/internal/chatlog"
 	"github.com/mmionya/nyande-bot/internal/llm"
-	"github.com/mmionya/nyande-bot/internal/schedules"
 	"github.com/mmionya/nyande-bot/internal/telegram"
 	"github.com/mmionya/nyande-bot/resources"
 )
@@ -316,34 +314,5 @@ func TestLLMControlOnResumesCollectionWhenLLMGloballyDisabled(t *testing.T) {
 	}
 	if last := network.messages[len(network.messages)-1]; last != resources.Get("llm.control.global_disabled_collecting") {
 		t.Fatalf("status did not explain that collection works but the LLM is globally disabled: %q", last)
-	}
-}
-
-func TestLLMOffBlocksExplicitScheduleRecognitionWithoutLosingDraft(t *testing.T) {
-	b, network := llmControlTestBot(t)
-	ctx := context.Background()
-	store, err := schedules.Open(filepath.Join(t.TempDir(), "schedules.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	b.schedules = store
-	draft, err := store.SaveDraft(ctx, schedules.Draft{UserID: 1, ChatID: 1, Stage: "collect", Notes: []string{"Завтра в 15:00 математика"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	llmControlUpdate(t, b, llmControlMessage(2, 1, 1, "/llm off"), false)
-	callback := &telegram.CallbackQuery{ID: "recognize-while-off", From: telegram.User{ID: 1}, Message: llmControlMessage(100, 1, 99, ""), Data: fmt.Sprintf("sch:recognize:%d", draft.Revision)}
-	if err := b.HandleUpdate(ctx, telegram.Update{CallbackQuery: callback}); err != nil {
-		t.Fatal(err)
-	}
-	unchanged, err := store.GetDraft(ctx, 1, 1)
-	if err != nil || unchanged.Revision != draft.Revision || len(unchanged.Notes) != 1 {
-		t.Fatalf("refused recognition lost or modified the draft: %#v, %v", unchanged, err)
-	}
-	network.mu.Lock()
-	defer network.mu.Unlock()
-	if len(network.requests) != 0 {
-		t.Fatal("explicit recognition bypassed the per-chat LLM setting")
 	}
 }

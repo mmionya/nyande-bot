@@ -15,9 +15,7 @@ __pycache__/
 node_modules/
 dist/
 
-.nyande-quotes.db*
+.nyande-*.db*
 
 .nyande-discord-llm.json*
 .nyande-telegram-llm.json*
-.nyande-schedules.db*
-.nyande-reminders.db*
