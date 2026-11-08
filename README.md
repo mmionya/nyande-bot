@@ -445,11 +445,17 @@ an invalid ban file stops startup instead of silently losing the bans.
 | `/forget_all` | delete all long-term memories for the current user and chat |
 | `/round` | convert video into a square Telegram Video Note |
 | `/voice` | convert audio or video into a Telegram Voice message |
+| `/audio` | extract audio from video, audio, a voice message, or a video note as MP3 |
 | `/gif` | convert video into a looping Telegram GIF animation |
 | `/mediainfo` | show technical specs (resolution, FPS, duration, codecs) of photo/video/audio |
 | `/allowlink example.com` | allow a domain in a private chat or as an administrator |
 | `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
 | `/permitlinks` / `/revokelinks` | reply to a participant to grant/revoke links in silent mode (administrators only) |
+
+In Telegram, attach media with `/audio` in its caption or reply with `/audio`
+to a video, audio file, voice message, or video note. The bot sends an MP3 file.
+The command uses FFmpeg from `FFMPEG_PATH` and applies `MAX_FILE_SIZE` to both
+the source and the result. URLs are not accepted by this command.
 
 Use `!gif` with an attached video, a supported link, or as a reply to a video
 message. The bot sends a silent GIF at 15 fps and up to 480 pixels wide,

@@ -195,6 +195,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "ping", "description": resources.Get("telegram.command.ping")},
 		{"command": "round", "description": resources.Get("telegram.command.round")},
 		{"command": "voice", "description": resources.Get("telegram.command.voice")},
+		{"command": "audio", "description": resources.Get("telegram.command.audio")},
 		{"command": "gif", "description": resources.Get("telegram.command.gif")},
 		{"command": "mediainfo", "description": resources.Get("telegram.command.mediainfo")},
 	}
@@ -425,6 +426,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			return b.roundCommand(ctx, message)
 		case "voice":
 			return b.voiceCommand(ctx, message)
+		case "audio":
+			return b.audioCommand(ctx, message)
 		case "gif":
 			return b.gifCommand(ctx, message)
 		case "mediainfo":
