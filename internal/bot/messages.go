@@ -12,6 +12,19 @@ import (
 const telegramMessageLimit = 4096
 
 func (b *Bot) sendLLMAnswer(ctx context.Context, message *telegram.Message, answer string) error {
+	for index, chunk := range telegram.FormatMarkdown(answer, telegramMessageLimit) {
+		replyTo := 0
+		if index == 0 {
+			replyTo = message.MessageID
+		}
+		if _, err := b.telegram.SendMessageWithEntities(ctx, message.Chat.ID, chunk.Text, chunk.Entities, replyTo, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *Bot) sendPlainAnswer(ctx context.Context, message *telegram.Message, answer string) error {
 	for index, chunk := range splitTelegramMessage(answer, telegramMessageLimit) {
 		replyTo := 0
 		if index == 0 {

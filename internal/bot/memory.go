@@ -50,7 +50,7 @@ func (b *Bot) memoryCommand(ctx context.Context, message *telegram.Message) erro
 	for _, item := range items {
 		fmt.Fprintf(&text, "\n#%d: %s", item.ID, item.Content)
 	}
-	return b.sendLLMAnswer(ctx, message, text.String())
+	return b.sendPlainAnswer(ctx, message, text.String())
 }
 
 func (b *Bot) forgetCommand(ctx context.Context, message *telegram.Message, argument string) error {

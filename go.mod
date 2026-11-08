@@ -9,6 +9,7 @@ require (
 	github.com/disgoorg/snowflake/v2 v2.0.3
 	github.com/gorilla/websocket v1.5.3
 	github.com/thomas-vilte/dave-go v0.5.1
+	github.com/yuin/goldmark v1.8.7
 	golang.org/x/image v0.31.0
 	golang.org/x/net v0.56.0
 	modernc.org/sqlite v1.43.0

@@ -142,6 +142,11 @@ Long replies are split into messages. Document reading and LLM reactions are sup
 Photo/video/audio analysis, long-term memory,
 other application tools, moderation, payments, and games remain Telegram features.
 
+Telegram LLM replies render double-asterisk bold text, underscore italics,
+strikethrough, links, quotes, inline code, and fenced code blocks with a language.
+Text between single asterisks stays literal, including the asterisks.
+Long replies keep their formatting across messages; code indentation is preserved.
+
 ## LLM reactions
 
 The `react_to_message` tool lets the LLM choose a standard emoji reaction during

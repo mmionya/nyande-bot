@@ -653,7 +653,6 @@ var (
 	argumentPattern     = regexp.MustCompile(`(?is)<arg_key>\s*([^<]+?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>`)
 	reasoningPattern    = regexp.MustCompile(`(?is)<tool_call>.*?</tool_call>|</?(?:analysis|think)>|<\|?channel\|>\s*(?:analysis|final)\b`)
 	controlPattern      = regexp.MustCompile(`(?i)<\|(?:channel|im_start|im_end|im_sep|start|message|end|eot|assistant|user|system)\|>`)
-	repeatedAsterisks   = regexp.MustCompile(`\*{2,}`)
 	truncatedKaomoji    = regexp.MustCompile(`>[wWoOvV/^_.-]{1,8}$`)
 )
 
@@ -768,7 +767,6 @@ func formatAnswer(value string) string {
 	}
 	value = controlPattern.ReplaceAllString(value, "")
 	value = strings.TrimSpace(value)
-	value = repeatedAsterisks.ReplaceAllString(value, "*")
 	if truncatedKaomoji.MatchString(value) {
 		value += "<"
 	}

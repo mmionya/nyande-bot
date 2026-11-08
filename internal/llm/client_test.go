@@ -85,10 +85,15 @@ func TestCleanAnswerRepairsTrailingKaomoji(t *testing.T) {
 	}
 }
 
-func TestCleanAnswerCollapsesRepeatedAsterisks(t *testing.T) {
-	input := "**важно** и ****"
-	if result := formatAnswer(input); result != "*важно* и *" {
-		t.Fatalf("unexpected answer formatting: %q", result)
+func TestCleanAnswerPreservesMarkdownAndCode(t *testing.T) {
+	for _, input := range []string{
+		"**важно** и *курсив*",
+		"Код: `2 ** 3`",
+		"```python\nprint(2 ** 3)\n```",
+	} {
+		if result := formatAnswer(input); result != input {
+			t.Fatalf("answer formatting changed: got %q, want %q", result, input)
+		}
 	}
 }
 

@@ -162,7 +162,29 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64) ([]Update, error)
 }
 
 func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, replyTo int, markup any) (Message, error) {
+	return c.sendMessage(ctx, chatID, text, nil, replyTo, markup)
+}
+
+// SendMessageWithEntities sends rendered text without interpreting its contents
+// as markup. Only an explicit entity rejection permits a plain-text fallback;
+// retrying a lost or ambiguous response could duplicate an already sent message.
+func (c *Client) SendMessageWithEntities(ctx context.Context, chatID int64, text string, entities []MessageEntity, replyTo int, markup any) (Message, error) {
+	result, err := c.sendMessage(ctx, chatID, text, entities, replyTo, markup)
+	var apiErr *APIError
+	if len(entities) > 0 && errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest && apiErr.ErrorCode == http.StatusBadRequest {
+		description := strings.ToLower(apiErr.Description)
+		if strings.Contains(description, "entity") || strings.Contains(description, "entities") {
+			return c.sendMessage(ctx, chatID, text, nil, replyTo, markup)
+		}
+	}
+	return result, err
+}
+
+func (c *Client) sendMessage(ctx context.Context, chatID int64, text string, entities []MessageEntity, replyTo int, markup any) (Message, error) {
 	payload := map[string]any{"chat_id": chatID, "text": text}
+	if len(entities) > 0 {
+		payload["entities"] = entities
+	}
 	if replyTo != 0 {
 		payload["reply_parameters"] = map[string]any{"message_id": replyTo, "allow_sending_without_reply": true}
 	}

@@ -43,6 +43,8 @@ github.com/thomas-vilte/dave-go v0.5.1 h1:sc0roOie5Ayn+3eKOUjry9kbBPDvFQCF8t+gy/
 github.com/thomas-vilte/dave-go v0.5.1/go.mod h1:h0UvVsCDECUe6W6dlSHEQTbx3TT13pGmHGngG0GXg1o=
 github.com/thomas-vilte/mls-go v1.6.0 h1:HGxrRe0kRfEAXu7MtTemNzqGmC/758rfGkarhYGPOYg=
 github.com/thomas-vilte/mls-go v1.6.0/go.mod h1:Cxl407ecAW94wwYLOycpQUp0UyfBk6dNmvs1hkw2yLg=
+github.com/yuin/goldmark v1.8.7 h1:XT/tNqCIbabh0ln675w4x3dv04kQBKi8NwYqi9IJaxI=
+github.com/yuin/goldmark v1.8.7/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b/go.mod h1:T9bdIzuCu7OtxOm1hfPfRQxPLYneinmdGuTeoZ9dtd4=
 golang.org/x/crypto v0.54.0 h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=
 golang.org/x/crypto v0.54.0/go.mod h1:KWL8ny2AZdGR2cWmzeHrp2azQPGogOv+HeQaVEXC2dk=

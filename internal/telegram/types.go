@@ -91,11 +91,12 @@ func (m Message) IsPrivate() bool {
 }
 
 type MessageEntity struct {
-	Type   string `json:"type"`
-	Offset int    `json:"offset"`
-	Length int    `json:"length"`
-	URL    string `json:"url,omitempty"`
-	User   *User  `json:"user,omitempty"`
+	Type     string `json:"type"`
+	Offset   int    `json:"offset"`
+	Length   int    `json:"length"`
+	URL      string `json:"url,omitempty"`
+	User     *User  `json:"user,omitempty"`
+	Language string `json:"language,omitempty"`
 }
 
 type PhotoSize struct {
