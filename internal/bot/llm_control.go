@@ -58,6 +58,7 @@ func (b *Bot) configureLLM(ctx context.Context, message *telegram.Message, argum
 	}
 	log.Printf(resources.Get("llm.control.log_changed"), message.Chat.ID, !disabled)
 	if disabled {
+		b.cancelAgentChat(message.Chat.ID)
 		return respond("llm.control.disabled")
 	}
 	return respond(b.llmStatus())

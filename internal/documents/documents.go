@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/mmionya/nyande-bot/resources"
@@ -52,9 +53,16 @@ func format(name, mimeType string) string {
 		return ext[1:]
 	case ".odt", ".ods", ".odp", ".odf":
 		return "odf"
+	case ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".xml", ".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".py", ".go", ".rs", ".java", ".kt", ".kts", ".c", ".h", ".cpp", ".hpp", ".cs", ".sql", ".sh", ".ps1", ".log":
+		return "text"
 	}
 	mimeType, _, _ = mime.ParseMediaType(strings.ToLower(mimeType))
+	if strings.HasPrefix(mimeType, "text/") {
+		return "text"
+	}
 	switch mimeType {
+	case "application/json", "application/ld+json", "application/x-ndjson", "application/xml", "application/yaml", "application/javascript":
+		return "text"
 	case "application/pdf":
 		return "pdf"
 	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -86,7 +94,14 @@ func Extract(ctx context.Context, name, mimeType string, data []byte) (Document,
 	out := &textBuffer{}
 	var err error
 	kind := format(name, mimeType)
-	if kind == "pdf" {
+	if kind == "text" {
+		if !utf8.Valid(data) || strings.IndexFunc(string(data), func(r rune) bool {
+			return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t'
+		}) >= 0 {
+			return result, errors.New(resources.Get("documents.error.text_encoding"))
+		}
+		err = out.add(strings.TrimPrefix(string(data), "\ufeff"))
+	} else if kind == "pdf" {
 		err = extractPDF(ctx, data, out)
 	} else if kind != "" {
 		var archive *documentArchive
@@ -113,8 +128,11 @@ func Extract(ctx context.Context, name, mimeType string, data []byte) (Document,
 		return result, err
 	}
 	result.Text = strings.TrimSpace(out.String())
+	if kind == "text" {
+		result.Text = out.String()
+	}
 	result.Truncated = out.truncated || errors.Is(err, errTextLimit)
-	if result.Text == "" {
+	if strings.TrimSpace(result.Text) == "" {
 		return result, ErrNoText
 	}
 	return result, nil

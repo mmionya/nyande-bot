@@ -175,7 +175,16 @@ func humanDownloadError(rawURL string, err error) string {
 }
 
 func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
+	return b.handleLLMRequest(ctx, message, nil)
+}
+
+// Agent requests share attachment decoding and final-answer formatting with
+// normal replies, but use an isolated tool set and their own task lifecycle.
+func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, agent *llm.AgentOptions) error {
 	if b.llmDisabled(message.Chat.ID) || b.llm == nil || !b.llm.Enabled() {
+		if agent != nil {
+			return errors.New(resources.Get("bot.agent.disabled"))
+		}
 		return nil
 	}
 	text := strings.TrimSpace(message.ContentText())
@@ -183,24 +192,38 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	if text == "" && !hasMedia {
 		return nil
 	}
-	if !message.IsPrivate() && !b.shouldHandleGroupLLM(message) {
+	if agent == nil && !message.IsPrivate() && !b.shouldHandleGroupLLM(message) {
 		return nil
+	}
+	report := func(text string) error {
+		if agent != nil {
+			return errors.New(text)
+		}
+		_, err := b.telegram.SendMessage(ctx, message.Chat.ID, text, message.MessageID, nil)
+		return err
 	}
 
 	stopTyping := make(chan struct{})
-	go b.typingLoop(ctx, message.Chat.ID, stopTyping)
-	defer close(stopTyping)
+	typingCtx, cancelTyping := context.WithCancel(ctx)
+	typingDone := make(chan struct{})
+	go func() {
+		defer close(typingDone)
+		b.typingLoop(typingCtx, message.Chat.ID, stopTyping)
+	}()
+	defer func() {
+		close(stopTyping)
+		cancelTyping()
+		<-typingDone
+	}()
 
 	attachments, err := b.collectLLMAttachments(ctx, message)
 	if err != nil {
 		log.Printf(resources.Get("telegram.log.media_collection_failed"), err)
 		if hasDocument(message) {
-			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("documents.error.download"), message.MessageID, nil)
-			return sendErr
+			return report(resources.Get("documents.error.download"))
 		}
 		if source := llmMediaSource(message); source != nil && (source.Sticker != nil || source.Voice != nil || source.Audio != nil) {
-			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.media.download_failed"), message.MessageID, nil)
-			return sendErr
+			return report(resources.Get("telegram.media.download_failed"))
 		}
 	}
 	images := make([]llm.Image, 0)
@@ -211,14 +234,12 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 		switch attachment.Kind {
 		case "sticker", "sticker_preview":
 			if !b.cfg.LLMVision {
-				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.sticker.vision_disabled"), message.MessageID, nil)
-				return sendErr
+				return report(resources.Get("telegram.sticker.vision_disabled"))
 			}
 			frames, contextText, stickerErr := b.readSticker(ctx, attachment)
 			if stickerErr != nil {
 				log.Printf(resources.Get("telegram.log.sticker_failed"), stickerErr)
-				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.sticker.failed"), message.MessageID, nil)
-				return sendErr
+				return report(resources.Get("telegram.sticker.failed"))
 			}
 			images = append(images, frames...)
 			stickerContext = contextText
@@ -229,8 +250,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			}
 			doc, docErr := documents.Read(ctx, attachment.Name, attachment.MIME, attachment.Data, imageLimit)
 			if docErr != nil {
-				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Format("documents.error.read", map[string]any{"name": attachment.Name, "error": docErr}), message.MessageID, nil)
-				return sendErr
+				return report(resources.Format("documents.error.read", map[string]any{"name": attachment.Name, "error": docErr}))
 			}
 			docs = append(docs, doc)
 		case "photo":
@@ -256,14 +276,12 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 			}
 		case "audio", "voice":
 			if !b.cfg.WhisperEnabled {
-				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.voice.disabled"), message.MessageID, nil)
-				return sendErr
+				return report(resources.Get("telegram.voice.disabled"))
 			}
 			transcript, transcriptErr := b.transcribe(ctx, attachment, false)
 			if transcriptErr != nil {
 				log.Printf(resources.Get("telegram.log.audio_transcription_failed"), transcriptErr)
-				_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("telegram.voice.failed"), message.MessageID, nil)
-				return sendErr
+				return report(resources.Get("telegram.voice.failed"))
 			}
 			transcripts = append(transcripts, transcript)
 		}
@@ -273,10 +291,7 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	}
 	if text == "" && len(images) == 0 && len(transcripts) == 0 && len(docs) == 0 {
 		if err != nil && isFileTooBig(err) {
-			_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
-				resources.Get("telegram.media.file_too_large"),
-				message.MessageID, nil)
-			return sendErr
+			return report(resources.Get("telegram.media.file_too_large"))
 		}
 		return nil
 	}
@@ -306,19 +321,51 @@ func (b *Bot) handleLLM(ctx context.Context, message *telegram.Message) error {
 	tools = append(tools, b.memoryTools(message)...)
 	tools = append(tools, b.chatlogTools(message)...)
 	tools = append(tools, b.reminderTools(message)...)
+	var memories []llm.Memory
+	if agent == nil {
+		memories = b.recallMemories(ctx, message, text)
+	} else {
+		allowed := make([]llm.Tool, 0, 4)
+		for _, tool := range tools {
+			switch tool.Name {
+			case "read_webpage", "create_file", "search_chat_messages", "get_recent_messages":
+				execute := tool.Execute
+				tool.Execute = func(ctx context.Context, arguments map[string]string) (string, error) {
+					if err := ctx.Err(); err != nil {
+						return "", err
+					}
+					if !b.agentOutputAllowed(message) {
+						return "", context.Canceled
+					}
+					return execute(ctx, arguments)
+				}
+				allowed = append(allowed, tool)
+			}
+		}
+		tools = allowed
+	}
 	answer, err := b.llm.Ask(ctx, llm.Request{
 		ChatID: message.Chat.ID, UserName: userName, Text: text,
 		ReplyContext:   replyContext(message),
 		StickerContext: stickerContext,
-		Images:         images, Transcripts: transcripts, Memories: b.recallMemories(ctx, message, text), Tools: tools,
-		Documents: docs,
+		Images:         images, Transcripts: transcripts, Memories: memories, Tools: tools,
+		Documents: docs, Agent: agent,
 	})
 	if err != nil {
 		b.state.LLMErrors.Add(1)
 		log.Printf(resources.Get("telegram.log.llm_failed"), message.Chat.ID, err)
+		if agent != nil {
+			return err
+		}
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
 			resources.Format("llm.error.request_failed", map[string]any{"error": err}), message.MessageID, nil)
 		return sendErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if agent != nil && !b.agentOutputAllowed(message) {
+		return context.Canceled
 	}
 	return b.sendLLMAnswer(ctx, message, answer)
 }

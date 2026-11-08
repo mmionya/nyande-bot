@@ -28,6 +28,9 @@ func Read(ctx context.Context, name, mimeType string, data []byte, maxImages int
 	if len(data) > MaxFileSize || (textErr != nil && !errors.Is(textErr, ErrNoText)) {
 		return doc, textErr
 	}
+	if format(name, mimeType) == "text" {
+		return doc, textErr
+	}
 	if maxImages <= 0 {
 		if textErr == nil {
 			doc.Warning = resources.Get("documents.warning.images_disabled")

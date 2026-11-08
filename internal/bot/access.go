@@ -67,6 +67,9 @@ func (b *Bot) botBanCommand(ctx context.Context, message *telegram.Message, comm
 	if err := b.access.SetBanned(id, banned); err != nil {
 		return errors.Join(err, respond("access.save_failed"))
 	}
+	if banned {
+		b.cancelAgentUser(target)
+	}
 	log.Printf(resources.Get("telegram.log.access"), message.From.ID, target, banned)
 	key := "access.unbanned"
 	if banned {

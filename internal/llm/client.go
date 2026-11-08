@@ -44,6 +44,7 @@ type Request struct {
 	Documents      []documents.Document // Request-only attachment context, excluded from history.
 	Memories       []Memory
 	Tools          []Tool
+	Agent          *AgentOptions // Optional isolated, bounded multi-step task.
 }
 
 type Memory struct {
@@ -150,7 +151,10 @@ func (c *Client) Reset(chatID int64) bool {
 }
 
 func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
-	if c.historyErr != nil {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if request.Agent == nil && c.historyErr != nil {
 		return "", c.historyErr
 	}
 	if !c.cfg.LLMEnabled {
@@ -224,7 +228,9 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	systemPrompt += "\n\n" + currentTime(c.cfg.LLMTimezone) + resources.Get("llm.prompt.current_date_instruction")
 	if c.webSearchAvailable() {
 		systemPrompt += resources.Get("llm.prompt.web_search_instruction")
-		systemPrompt += resources.Get("llm.prompt.web_search_no_links")
+		if request.Agent == nil {
+			systemPrompt += resources.Get("llm.prompt.web_search_no_links")
+		}
 	}
 	if len(request.Tools) > 0 {
 		systemPrompt += applicationToolsPrompt(request.Tools)
@@ -232,12 +238,16 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	if len(request.Memories) > 0 {
 		systemPrompt += longTermMemoryPrompt(request.Memories)
 	}
+	if request.Agent != nil {
+		systemPrompt += "\n\n" + agentSystemInstruction
+	}
 
-	c.mu.Lock()
-	history := append([]chatMessage(nil), c.history[request.ChatID]...)
-	c.mu.Unlock()
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}}
-	messages = append(messages, history...)
+	if request.Agent == nil {
+		c.mu.Lock()
+		messages = append(messages, c.history[request.ChatID]...)
+		c.mu.Unlock()
+	}
 	messages = append(messages, chatMessage{Role: "user", Content: content})
 	if c.cfg.LLMCooldown > 0 {
 		select {
@@ -250,7 +260,12 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	tools := c.requestTools(request.Tools...)
 	var response completionResponse
 	searchCache := map[string]string{}
-	for step := 0; step < maxAgentSteps; step++ {
+	run := newAgentRun(request.Agent)
+	for step := 0; step < run.maxSteps; step++ {
+		run.progress(step+1, "thinking", "")
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		var err error
 		response, err = c.complete(ctx, messages, tools, true)
 		if err != nil && strings.Contains(strings.ToLower(err.Error()), "server tool request failed") {
@@ -274,6 +289,9 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 				return "", err
 			}
 		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		if len(response.Choices) == 0 {
 			return "", errors.New(resources.Get("llm.error.no_choices"))
 		}
@@ -289,7 +307,9 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 					request.ChatID, choice.FinishReason, len(choice.Message.Content))
 				return "", errors.New(resources.Get("llm.error.no_final_answer"))
 			}
-			c.saveHistory(request.ChatID, userText, answer)
+			if err := c.saveRequestHistory(ctx, request, userText, answer); err != nil {
+				return "", err
+			}
 			log.Printf(resources.Get("llm.log.answer_completed"), request.ChatID, time.Since(started).Milliseconds(), len([]rune(answer)))
 			return answer, nil
 		}
@@ -297,48 +317,85 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 			Role: "assistant", Content: stripReasoning(choice.Message.Content), ToolCalls: calls,
 		})
 		for _, call := range calls {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
 			toolStarted := time.Now()
 			toolFailed := false
-			log.Printf(resources.Get("llm.log.tool_started"), request.ChatID, step+1, call.Function.Name)
 			arguments := decodeArguments(call.Function.Arguments)
 			var result string
-			switch call.Function.Name {
-			case "current_time":
-				result = currentTime(c.cfg.LLMTimezone)
-			case "web_search":
-				query := strings.TrimSpace(arguments["query"])
-				if query == "" {
-					result = resources.Get("llm.prompt.empty_search")
-				} else if cached, exists := searchCache[strings.ToLower(query)]; exists {
-					result = resources.Format("llm.prompt.repeated_search", map[string]any{"cached": cached})
-				} else {
-					result = c.searchWeb(ctx, query)
-					searchCache[strings.ToLower(query)] = result
-				}
+			cacheKey := canonicalToolCall(call)
+			cached, repeated := run.results[cacheKey]
+			switch {
+			case run.limitReached():
+				result = agentSkippedToolResult
+			case !advertisesFunction(tools, call.Function.Name) || (call.Function.Name == "web_search" && !c.cfg.LLMWebSearch):
+				run.toolCalls++
+				toolFailed = true
+				result = resources.Get("llm.prompt.unknown_tool")
+			case request.Agent != nil && repeated:
+				run.toolCalls++
+				result = cached
 			default:
-				custom := findTool(request.Tools, call.Function.Name)
-				if custom == nil || custom.Execute == nil {
-					toolFailed = true
-					result = resources.Get("llm.prompt.unknown_tool")
-				} else {
-					result, err = custom.Execute(ctx, arguments)
-					if err != nil {
+				run.toolCalls++
+				run.progress(step+1, "tool", call.Function.Name)
+				if err := ctx.Err(); err != nil {
+					return "", err
+				}
+				log.Printf(resources.Get("llm.log.tool_started"), request.ChatID, step+1, call.Function.Name)
+				switch call.Function.Name {
+				case "current_time":
+					result = currentTime(c.cfg.LLMTimezone)
+				case "web_search":
+					query := strings.TrimSpace(arguments["query"])
+					if query == "" {
+						result = resources.Get("llm.prompt.empty_search")
+					} else if cached, exists := searchCache[strings.ToLower(query)]; exists {
+						result = resources.Format("llm.prompt.repeated_search", map[string]any{"cached": cached})
+					} else {
+						result = c.searchWeb(ctx, query)
+						searchCache[strings.ToLower(query)] = result
+					}
+				default:
+					custom := findTool(request.Tools, call.Function.Name)
+					if custom == nil || custom.Execute == nil {
 						toolFailed = true
-						result = resources.Get("llm.tool.failed_prefix") + err.Error()
+						result = resources.Get("llm.prompt.unknown_tool")
+					} else {
+						result, err = custom.Execute(ctx, arguments)
+						if err != nil {
+							toolFailed = true
+							result = resources.Get("llm.tool.failed_prefix") + err.Error()
+						}
 					}
 				}
+			}
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			if request.Agent != nil {
+				result = boundedToolResult(result)
+				run.results[cacheKey] = result
 			}
 			log.Printf(resources.Get("llm.log.tool_returned"), request.ChatID, step+1, call.Function.Name, toolFailed, time.Since(toolStarted).Milliseconds())
 			messages = append(messages, chatMessage{
 				Role: "tool", ToolCallID: call.ID, Name: call.Function.Name, Content: result,
 			})
 		}
+		if run.limitReached() {
+			break
+		}
 	}
 
+	run.progress(run.step, "finalizing", "")
 	finalMessages := append([]chatMessage(nil), messages...)
+	finalInstruction := resources.Format("llm.prompt.force_final", map[string]any{"original_prompt": text})
+	if request.Agent != nil {
+		finalInstruction += "\n\nThe task's step or tool-call budget is exhausted. No more tools can run. State what was actually completed and what remains incomplete."
+	}
 	finalMessages = append(finalMessages, chatMessage{
 		Role:    "user",
-		Content: resources.Format("llm.prompt.force_final", map[string]any{"original_prompt": text}),
+		Content: finalInstruction,
 	})
 	response, err := c.complete(ctx, finalMessages, nil, false)
 	if err != nil || len(response.Choices) == 0 {
@@ -351,7 +408,12 @@ func (c *Client) Ask(ctx context.Context, request Request) (string, error) {
 	if answer == "" {
 		return "", errors.New(resources.Get("llm.error.no_final_answer"))
 	}
-	c.saveHistory(request.ChatID, userText, answer)
+	if request.Agent != nil {
+		answer += run.budgetSuffix()
+	}
+	if err := c.saveRequestHistory(ctx, request, userText, answer); err != nil {
+		return "", err
+	}
 	return answer, nil
 }
 
@@ -361,6 +423,9 @@ func (c *Client) complete(ctx context.Context, messages []chatMessage, tools []m
 	// or an explicitly higher LLM_MAX_TOKENS. Never replay already executed tools.
 	retryTokens := min(32768, max(8192, min(maxTokens, 16384)*2))
 	for {
+		if err := ctx.Err(); err != nil {
+			return completionResponse{}, err
+		}
 		response, err := c.completeAttempt(ctx, messages, tools, allowTools, maxTokens)
 		if err != nil || len(response.Choices) == 0 || response.Choices[0].FinishReason != "length" {
 			return response, err
@@ -418,8 +483,15 @@ func (c *Client) completeAttempt(ctx context.Context, messages []chatMessage, to
 }
 
 func (c *Client) saveHistory(chatID int64, user, assistant string) {
+	c.saveHistoryWithContext(context.Background(), chatID, user, assistant)
+}
+
+func (c *Client) saveHistoryWithContext(ctx context.Context, chatID int64, user, assistant string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
 	if c.historyErr != nil {
 		log.Printf(resources.Get("llm.log.cannot_save_history"), c.historyErr)
 		return

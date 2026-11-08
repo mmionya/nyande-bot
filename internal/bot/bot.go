@@ -32,23 +32,27 @@ type adminKey struct {
 }
 
 type Bot struct {
-	cfg        config.Config
-	access     *access.Store
-	telegram   *telegram.Client
-	downloader *downloader.Downloader
-	llm        *llm.Client
-	memories   *memory.Store
-	state      *State
-	allowlist  *allowlist
-	linkConfig *linkDeletionSettings
-	llmConfig  *llmChatSettings
-	identity   telegram.User
-	media      *mediaCache
-	chatlog    *chatlog.Store
-	reminders  *reminders.Store
-	quotes     *quotes.Store
-	musicMu    sync.Mutex
-	music      *telegramMusic
+	cfg          config.Config
+	access       *access.Store
+	telegram     *telegram.Client
+	downloader   *downloader.Downloader
+	llm          *llm.Client
+	memories     *memory.Store
+	state        *State
+	allowlist    *allowlist
+	linkConfig   *linkDeletionSettings
+	llmConfig    *llmChatSettings
+	identity     telegram.User
+	media        *mediaCache
+	chatlog      *chatlog.Store
+	reminders    *reminders.Store
+	quotes       *quotes.Store
+	musicMu      sync.Mutex
+	music        *telegramMusic
+	agentMu      sync.Mutex
+	agentJobs    map[int64]*agentJob
+	agentClosing bool
+	agentWG      sync.WaitGroup
 
 	updateLocks     sync.Map
 	adminMu         sync.Mutex
@@ -139,6 +143,7 @@ func New(cfg config.Config) (*Bot, error) {
 }
 
 func (b *Bot) Close() error {
+	b.agentShutdown()
 	var errs []error
 	if b.quotes != nil {
 		if err := b.quotes.Close(); err != nil {
@@ -173,6 +178,9 @@ func (b *Bot) Run(ctx context.Context) error {
 	go b.reminderLoop(ctx)
 	commands := []map[string]string{
 		{"command": "help", "description": resources.Get("telegram.command.help")},
+		{"command": "agent", "description": resources.Get("telegram.command.agent")},
+		{"command": "agentstatus", "description": resources.Get("telegram.command.agentstatus")},
+		{"command": "agentstop", "description": resources.Get("telegram.command.agentstop")},
 		{"command": "search", "description": resources.Get("telegram.command.search")},
 		{"command": "play", "description": resources.Get("telegram.command.play")},
 		{"command": "botban", "description": resources.Get("telegram.command.botban")},
@@ -247,6 +255,22 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 		chatID = update.EditedMessage.Chat.ID
 	case update.CallbackQuery != nil && update.CallbackQuery.Message != nil:
 		chatID = update.CallbackQuery.Message.Chat.ID
+	}
+	// Task controls must remain available while an ordinary conversation turn
+	// holds the per-chat lock. They only touch the task registry under agentMu.
+	if update.Message != nil {
+		command, _, ok := parseCommand(text, b.identity.Username)
+		if ok && (command == "agentstatus" || command == "agentstop") {
+			if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
+				return err
+			}
+			if b.silentModeration(chatID) {
+				return nil
+			}
+			b.state.MessagesTotal.Add(1)
+			b.state.CommandsUsed.Add(1)
+			return b.agentControlCommand(ctx, update.Message, command)
+		}
 	}
 	// Match the supported-link branch in handleMessage. Commands and links
 	// that may reach the LLM stay serialized with the conversation and /reset.
@@ -337,6 +361,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			if err := b.linkConfig.EnableSilent(message.Chat.ID); err != nil {
 				return err
 			}
+			b.cancelAgentChat(message.Chat.ID)
 			log.Printf(resources.Get("telegram.log.silent_enabled"), message.Chat.ID, userID(message), message.MessageID)
 			return nil
 		}
@@ -368,6 +393,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
+		case "agent":
+			return b.agentCommand(ctx, message, arguments)
 		case "search", "music", "play":
 			return b.musicCommand(ctx, message, command, arguments)
 		case "botban", "botunban":

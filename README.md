@@ -27,6 +27,31 @@ LLM assistant on both platforms.
 - accepts Telegram Stars and can display an optional Ko-fi button;
 - keeps process statistics and separate LLM history for every chat.
 
+## Telegram agent tasks
+
+Use `/agent <task>` for multi-step research, comparison and file preparation,
+for example `/agent Compare these three sources and send a Markdown report`.
+Attach a supported document or reply to one to include it in the task.
+The agent can search the web when `LLM_WEB_SEARCH_ENABLED=true`, read public
+webpages, search this chat's archive when enabled, and send UTF-8 text files
+(such as Markdown, CSV, JSON or source code; up to 10 files of 1 MiB each).
+It does not execute code or create binary Office/PDF documents.
+
+Tasks run in the background. A progress message shows the current step and
+tool; `/agentstatus` checks it, and `/agentstop` lets the task's author cancel.
+The limits are 12 work rounds plus a final summary, 36 local tool calls and
+10 minutes, with one active
+task per chat and three across the bot. A final summary identifies when a
+step/call limit was reached. Normal chat remains available during a task.
+OpenRouter's hosted search has its own limit of one use per model request.
+`/llm off`, bans and silent moderation also prevent further agent output.
+
+Agent tasks have separate context from normal conversation history. They use
+the explicit request, its reply/attachments and any chat search they perform.
+In-progress tasks are not persisted or resumed after a restart; files already
+sent remain in Telegram. Existing text formatting also applies to agent replies,
+including preserving literal `*single-star text*`.
+
 ## Chat games
 
 The `/ttt` and `/checkers` commands also run games directly through Telegram
