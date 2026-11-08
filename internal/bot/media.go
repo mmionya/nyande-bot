@@ -47,7 +47,7 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 		_ = b.telegram.EditMessageText(statusCtx, message.Chat.ID, status.MessageID, resources.Get("downloader.status.compressing"), nil)
 	})
 	result, err := b.downloader.Download(downloadCtx, mediaURL)
-	if err == nil && len(result.Items) == 0 {
+	if err == nil && len(result.Items) == 0 && (result.Post == nil || strings.TrimSpace(result.Post.Text) == "") {
 		err = errors.New(resources.Get("telegram.error.download_empty"))
 	}
 	if err != nil {
@@ -92,12 +92,26 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 			resources.Get("downloader.error.telegram_send"), nil)
 		return sent, sendErr
 	}
+	if len(result.Items) > 0 && result.Post != nil && len(sent) > 0 && !b.llmDisabled(message.Chat.ID) {
+		if markup := b.twitterTranslationMarkup(*result.Post); markup != nil {
+			// The media is already delivered. A failed button edit must never
+			// turn success into a retry that uploads the files a second time.
+			buttonCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := b.telegram.EditMessageReplyMarkup(buttonCtx, message.Chat.ID, sent[0].MessageID, markup); err != nil {
+				log.Printf("[twitter] translation button unavailable chat=%d message=%d", message.Chat.ID, sent[0].MessageID)
+			}
+			cancel()
+		}
+	}
 	_ = b.telegram.DeleteMessage(ctx, message.Chat.ID, status.MessageID)
 	log.Printf(resources.Get("telegram.log.media_sent"), message.Chat.ID, message.MessageID, len(sent), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
 	return sent, nil
 }
 
 func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message, result downloader.Result) ([]telegram.Message, error) {
+	if len(result.Items) == 0 && result.Post != nil {
+		return b.sendTwitterTextPost(ctx, message, *result.Post)
+	}
 	uploads := make([]telegram.Upload, 0, len(result.Items))
 	attachments := make([]cachedAttachment, len(result.Items))
 	for index, item := range result.Items {

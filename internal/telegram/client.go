@@ -204,6 +204,12 @@ func (c *Client) EditMessageText(ctx context.Context, chatID int64, messageID in
 	return c.call(ctx, "editMessageText", payload, nil)
 }
 
+func (c *Client) EditMessageReplyMarkup(ctx context.Context, chatID int64, messageID int, markup any) error {
+	return c.call(ctx, "editMessageReplyMarkup", map[string]any{
+		"chat_id": chatID, "message_id": messageID, "reply_markup": markup,
+	}, nil)
+}
+
 func (c *Client) DeleteMessage(ctx context.Context, chatID int64, messageID int) error {
 	return c.call(ctx, "deleteMessage", map[string]any{"chat_id": chatID, "message_id": messageID}, nil)
 }

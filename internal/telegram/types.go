@@ -48,28 +48,29 @@ type MessageOrigin struct {
 }
 
 type Message struct {
-	MessageID          int                `json:"message_id"`
-	From               *User              `json:"from,omitempty"`
-	Chat               Chat               `json:"chat"`
-	Date               int64              `json:"date,omitempty"`
-	Text               string             `json:"text,omitempty"`
-	Caption            string             `json:"caption,omitempty"`
-	Entities           []MessageEntity    `json:"entities,omitempty"`
-	CaptionEntities    []MessageEntity    `json:"caption_entities,omitempty"`
-	ReplyToMessage     *Message           `json:"reply_to_message,omitempty"`
-	SenderChat         *Chat              `json:"sender_chat,omitempty"`
-	ForwardOrigin      *MessageOrigin     `json:"forward_origin,omitempty"`
-	IsAutomaticForward bool               `json:"is_automatic_forward,omitempty"`
-	Photo              []PhotoSize        `json:"photo,omitempty"`
-	Video              *Video             `json:"video,omitempty"`
-	Animation          *Animation         `json:"animation,omitempty"`
-	Audio              *Audio             `json:"audio,omitempty"`
-	Voice              *Voice             `json:"voice,omitempty"`
-	VideoNote          *VideoNote         `json:"video_note,omitempty"`
-	Document           *Document          `json:"document,omitempty"`
-	Sticker            *Sticker           `json:"sticker,omitempty"`
-	MediaGroupID       string             `json:"media_group_id,omitempty"`
-	SuccessfulPayment  *SuccessfulPayment `json:"successful_payment,omitempty"`
+	MessageID          int                   `json:"message_id"`
+	From               *User                 `json:"from,omitempty"`
+	Chat               Chat                  `json:"chat"`
+	Date               int64                 `json:"date,omitempty"`
+	Text               string                `json:"text,omitempty"`
+	Caption            string                `json:"caption,omitempty"`
+	Entities           []MessageEntity       `json:"entities,omitempty"`
+	CaptionEntities    []MessageEntity       `json:"caption_entities,omitempty"`
+	ReplyToMessage     *Message              `json:"reply_to_message,omitempty"`
+	ReplyMarkup        *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+	SenderChat         *Chat                 `json:"sender_chat,omitempty"`
+	ForwardOrigin      *MessageOrigin        `json:"forward_origin,omitempty"`
+	IsAutomaticForward bool                  `json:"is_automatic_forward,omitempty"`
+	Photo              []PhotoSize           `json:"photo,omitempty"`
+	Video              *Video                `json:"video,omitempty"`
+	Animation          *Animation            `json:"animation,omitempty"`
+	Audio              *Audio                `json:"audio,omitempty"`
+	Voice              *Voice                `json:"voice,omitempty"`
+	VideoNote          *VideoNote            `json:"video_note,omitempty"`
+	Document           *Document             `json:"document,omitempty"`
+	Sticker            *Sticker              `json:"sticker,omitempty"`
+	MediaGroupID       string                `json:"media_group_id,omitempty"`
+	SuccessfulPayment  *SuccessfulPayment    `json:"successful_payment,omitempty"`
 }
 
 func (m Message) ContentText() string {
@@ -97,6 +98,16 @@ type MessageEntity struct {
 	URL      string `json:"url,omitempty"`
 	User     *User  `json:"user,omitempty"`
 	Language string `json:"language,omitempty"`
+}
+
+type InlineKeyboardMarkup struct {
+	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
+}
+
+type InlineKeyboardButton struct {
+	Text         string `json:"text"`
+	CallbackData string `json:"callback_data,omitempty"`
+	URL          string `json:"url,omitempty"`
 }
 
 type PhotoSize struct {

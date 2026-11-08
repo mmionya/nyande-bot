@@ -27,6 +27,23 @@ LLM assistant on both platforms.
 - accepts Telegram Stars and can display an optional Ko-fi button;
 - keeps process statistics and separate LLM history for every chat.
 
+## Twitter/X text posts and translation in Telegram
+
+Send a public X/Twitter post URL to receive the post even when it has no photos
+or videos. Text posts include the full text, author and source URL; long posts
+are split into messages. Literal asterisks and code in the original are preserved.
+
+The **Перевести** button translates a post into Russian. Use `/translate en URL`
+or reply to a post with `/translate en` for another language. `/translate` defaults
+to Russian and also accepts replies to ordinary text messages. Supported language
+codes: `ru`, `en`, `kk`, `uk`, `de`, `fr`, `es`, `ja`, `zh`. The short request
+`переведи URL` also works.
+
+Translation uses the configured LLM, respects the chat's LLM setting and remains
+separate from conversation history. Translating a URL fetches only the post text,
+without downloading its media again. Translations are separate messages; original
+posts remain unchanged. Buttons survive restarts while the public source exists.
+
 ## Telegram agent tasks
 
 Use `/agent <task>` for multi-step research, comparison and file preparation,

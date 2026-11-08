@@ -23,8 +23,8 @@ func TestSocialDownloadsStopAtMediaLimit(t *testing.T) {
 			wantPaths: []string{"/one.jpg", "/two.jpg"},
 		},
 		{
-			name: "X mixed media", source: "https://x.com/cat/status/123", endpoint: "/cat/status/123",
-			payload:   `{"tweet":{"media":{"videos":[{"url":"https://untrusted.example/invalid.mp4"},{"url":"https://video.twimg.com/one.mp4"},{"url":"https://video.twimg.com/one.mp4"}],"photos":[{"url":"http://pbs.twimg.com/invalid.jpg"},{"url":"https://pbs.twimg.com/two.jpg"},{"url":"https://pbs.twimg.com/unused.jpg"}]}}}`,
+			name: "X mixed media", source: "https://x.com/cat/status/123", endpoint: "/status/123",
+			payload:   `{"code":200,"tweet":{"id":"123","media":{"videos":[{"url":"https://untrusted.example/invalid.mp4"},{"url":"https://video.twimg.com/one.mp4"},{"url":"https://video.twimg.com/one.mp4"}],"photos":[{"url":"http://pbs.twimg.com/invalid.jpg"},{"url":"https://pbs.twimg.com/two.jpg"},{"url":"https://pbs.twimg.com/unused.jpg"}]}}}`,
 			wantPaths: []string{"/one.mp4", "/two.jpg"},
 		},
 	} {

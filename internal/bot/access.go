@@ -18,10 +18,10 @@ func (b *Bot) blockedMessage(message *telegram.Message) bool {
 }
 
 func (b *Bot) rejectBlockedUpdate(ctx context.Context, update telegram.Update) (bool, error) {
-	if query := update.PreCheckoutQuery; query != nil && b.access.IsBanned(strconv.FormatInt(query.From.ID, 10)) {
+	if query := update.PreCheckoutQuery; query != nil && b.access != nil && b.access.IsBanned(strconv.FormatInt(query.From.ID, 10)) {
 		return true, b.telegram.AnswerPreCheckout(ctx, query.ID, false, resources.Get("access.blocked"))
 	}
-	if callback := update.CallbackQuery; callback != nil && b.access.IsBanned(strconv.FormatInt(callback.From.ID, 10)) {
+	if callback := update.CallbackQuery; callback != nil && b.access != nil && b.access.IsBanned(strconv.FormatInt(callback.From.ID, 10)) {
 		if callback.Message != nil && b.silentModeration(callback.Message.Chat.ID) {
 			return true, nil
 		}

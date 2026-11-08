@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,6 +182,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "agent", "description": resources.Get("telegram.command.agent")},
 		{"command": "agentstatus", "description": resources.Get("telegram.command.agentstatus")},
 		{"command": "agentstop", "description": resources.Get("telegram.command.agentstop")},
+		{"command": "translate", "description": resources.Get("telegram.command.translate")},
 		{"command": "search", "description": resources.Get("telegram.command.search")},
 		{"command": "play", "description": resources.Get("telegram.command.play")},
 		{"command": "botban", "description": resources.Get("telegram.command.botban")},
@@ -276,10 +278,12 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	// that may reach the LLM stay serialized with the conversation and /reset.
 	mediaUpdate := update.Message != nil &&
 		!strings.HasPrefix(text, "/") && text != silentModerationTrigger &&
-		len(supportedURLs(extractURLs(update.Message))) > 0
+		len(supportedURLs(extractURLs(update.Message))) > 0 && twitterTranslationRequest(update.Message) == ""
 	musicUpdate := false
+	translationUpdate := false
 	if update.Message != nil {
 		command, _, ok := parseCommand(text, b.identity.Username)
+		translationUpdate = (ok && command == "translate") || twitterTranslationRequest(update.Message) != ""
 		if ok && (command == "search" || command == "music" || command == "play") {
 			musicUpdate = true
 		}
@@ -287,9 +291,12 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "music:") {
 		musicUpdate = true
 	}
+	if update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "twtranslate:") {
+		translationUpdate = true
+	}
 	var unlock func()
-	if musicUpdate {
-		lock := b.updateLock(chatID, true)
+	if musicUpdate || translationUpdate {
+		lock := b.updateLock(chatID, musicUpdate)
 		if !lock.TryLock() {
 			if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
 				return err
@@ -297,10 +304,14 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 			if b.silentModeration(chatID) {
 				return nil
 			}
-			if update.CallbackQuery != nil {
-				return b.telegram.AnswerCallback(ctx, update.CallbackQuery.ID, resources.Get("telegram.music.busy"), "", true)
+			busy := resources.Get("telegram.music.busy")
+			if translationUpdate {
+				busy = resources.Get("telegram.translate.busy")
 			}
-			_, err := b.telegram.SendMessage(ctx, chatID, resources.Get("telegram.music.busy"), update.Message.MessageID, nil)
+			if update.CallbackQuery != nil {
+				return b.telegram.AnswerCallback(ctx, update.CallbackQuery.ID, busy, "", true)
+			}
+			_, err := b.telegram.SendMessage(ctx, chatID, busy, update.Message.MessageID, nil)
 			return err
 		}
 		unlock = lock.Unlock
@@ -393,6 +404,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		}()
 		b.state.CommandsUsed.Add(1)
 		switch command {
+		case "translate":
+			return b.translateCommand(ctx, message, arguments)
 		case "agent":
 			return b.agentCommand(ctx, message, arguments)
 		case "search", "music", "play":
@@ -542,6 +555,9 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 	if b.blockedMessage(message) {
 		return nil
 	}
+	if source := twitterTranslationRequest(message); source != "" {
+		return b.translateCommand(ctx, message, source)
+	}
 	supported := supportedURLs(urls)
 	if len(supported) == 0 {
 		if b.llm != nil && b.llm.Enabled() {
@@ -554,6 +570,28 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 		return nil
 	}
 	return b.handleMediaURL(ctx, message, supported[0])
+}
+
+// Keep explicit short translation requests out of the automatic media path.
+// Language selection and longer instructions use /translate or the button.
+func twitterTranslationRequest(message *telegram.Message) string {
+	if message == nil {
+		return ""
+	}
+	urls := extractURLs(message)
+	if len(urls) != 1 {
+		return ""
+	}
+	value, err := url.Parse(urls[0])
+	if err != nil || !downloader.IsTwitter(value) {
+		return ""
+	}
+	request := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(message.ContentText(), urls[0], "")))
+	switch request {
+	case "переведи", "перевести", "переведи пост", "translate":
+		return urls[0]
+	}
+	return ""
 }
 
 func (b *Bot) addAllowedLink(ctx context.Context, message *telegram.Message, argument string) error {
@@ -587,6 +625,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *telegram.CallbackQue
 		return nil
 	}
 	switch {
+	case strings.HasPrefix(callback.Data, "twtranslate:"):
+		return b.handleTwitterTranslationCallback(ctx, callback)
 	case strings.HasPrefix(callback.Data, "music:"):
 		return b.handleMusicCallback(ctx, callback)
 	case strings.HasPrefix(callback.Data, "donate:"):

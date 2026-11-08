@@ -33,6 +33,14 @@ type Result struct {
 	Items   []Media
 	Caption string
 	Source  string
+	Post    *Post
+}
+
+// Post retains the complete text and attribution independently of media captions.
+type Post struct {
+	Text   string
+	Author string
+	URL    string
 }
 
 type Downloader struct {
