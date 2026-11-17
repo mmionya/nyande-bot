@@ -40,7 +40,7 @@ type twitterIntegrationNetwork struct {
 	requests    []twitterIntegrationRequest
 	postText    string
 	media       bool
-	failMarkup  bool
+	toolArgs    string
 	fxCalls     int
 	mediaCalls  int
 	llmCalls    int
@@ -92,6 +92,38 @@ func twitterIntegrationBot(t *testing.T, postText string) (*Bot, *twitterIntegra
 			}
 			network.llmRequests = append(network.llmRequests, string(data))
 			body = `{"choices":[{"message":{"content":"Переведённый *текст* с **буквальными** звёздочками."}}]}`
+			if network.toolArgs != "" {
+				var payload struct {
+					Tools    []struct{ Function struct{ Name string } }
+					Messages []struct{ Role, Content string }
+				}
+				if err := json.Unmarshal(data, &payload); err != nil {
+					t.Error(err)
+				}
+				if len(payload.Tools) > 0 {
+					advertised, completed := false, false
+					for _, tool := range payload.Tools {
+						advertised = advertised || tool.Function.Name == "translate_text"
+					}
+					if !advertised {
+						t.Error("LLM request does not advertise translate_text")
+					}
+					for _, message := range payload.Messages {
+						if message.Role == "tool" {
+							completed = true
+							if !strings.Contains(message.Content, "Переведённый") {
+								t.Errorf("translation result missing: %s", message.Content)
+							}
+						}
+					}
+					if !completed {
+						args, _ := json.Marshal(network.toolArgs)
+						body = fmt.Sprintf(`{"choices":[{"message":{"tool_calls":[{"id":"translation-1","type":"function","function":{"name":"translate_text","arguments":%s}}]}}]}`, args)
+					}
+				} else if len(payload.Messages) != 2 || !strings.Contains(payload.Messages[0].Content, "English") {
+					t.Errorf("standalone translation lost target language or isolation: %s", data)
+				}
+			}
 		case "api.telegram.org":
 			request := twitterIntegrationRequest{Method: r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]}
 			if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
@@ -108,10 +140,6 @@ func twitterIntegrationBot(t *testing.T, postText string) (*Bot, *twitterIntegra
 			case "sendMessage", "sendVideo", "sendDocument", "sendPhoto":
 				nextID++
 				body = fmt.Sprintf(`{"ok":true,"result":{"message_id":%d}}`, nextID)
-			case "editMessageReplyMarkup":
-				if network.failMarkup {
-					code, body = http.StatusBadRequest, `{"ok":false,"error_code":400,"description":"message cannot be edited"}`
-				}
 			case "editMessageText", "deleteMessage", "answerCallbackQuery", "sendChatAction":
 			default:
 				t.Errorf("unexpected Telegram method: %s", request.Method)
@@ -203,8 +231,8 @@ func TestTwitterIntegrationTextOnlyPreservesFullPostWithoutLLM(t *testing.T) {
 					if request.ParseMode != "" || len(request.Entities) != 0 || len(utf16.Encode([]rune(request.Text))) > telegramMessageLimit {
 						t.Fatalf("source formatting or chunk limit changed: %+v", request)
 					}
-					if request.ReplyMarkup == nil || twitterIDFromMarkup(request.ReplyMarkup) != twitterIntegrationID {
-						t.Fatal("text post lacks a translation button")
+					if request.ReplyMarkup != nil {
+						t.Fatal("text post still has a translation button")
 					}
 				}
 				deleted = deleted || (request.Method == "deleteMessage" && request.MessageID == 100)
@@ -220,9 +248,9 @@ func TestTwitterIntegrationTextOnlyPreservesFullPostWithoutLLM(t *testing.T) {
 	}
 }
 
-func TestTwitterIntegrationButtonFailureDoesNotRepeatMedia(t *testing.T) {
+func TestTwitterIntegrationMediaHasNoTranslationButton(t *testing.T) {
 	b, network, ctx := twitterIntegrationBot(t, "Video caption")
-	network.media, network.failMarkup = true, true
+	network.media = true
 	if err := b.HandleUpdate(ctx, telegram.Update{Message: twitterIntegrationMessage(twitterIntegrationURL)}); err != nil {
 		t.Fatal(err)
 	}
@@ -234,11 +262,11 @@ func TestTwitterIntegrationButtonFailureDoesNotRepeatMedia(t *testing.T) {
 			if !strings.Contains(request.Upload, "mock twitter video bytes") {
 				t.Fatal("downloaded media missing from upload")
 			}
+			if !strings.Contains(request.Upload, "Video caption\n\nCat author (@cat)") {
+				t.Fatal("uploaded caption did not preserve the author's separate paragraph")
+			}
 		case "editMessageReplyMarkup":
 			buttons++
-			if request.MessageID != 101 || twitterIDFromMarkup(request.ReplyMarkup) != twitterIntegrationID {
-				t.Fatalf("button did not target the delivered video: %+v", request)
-			}
 		case "editMessageText":
 			if request.Text != resources.Get("downloader.status.sending") {
 				t.Fatalf("successful upload reported as a failure: %q", request.Text)
@@ -247,13 +275,13 @@ func TestTwitterIntegrationButtonFailureDoesNotRepeatMedia(t *testing.T) {
 			cleanup = request.MessageID == 100
 		}
 	}
-	if uploads != 1 || buttons != 1 || !cleanup || network.mediaCalls != 1 || network.fxCalls != 1 || network.llmCalls != 0 || b.state.MediaErrors.Load() != 0 {
+	if uploads != 1 || buttons != 0 || !cleanup || network.mediaCalls != 1 || network.fxCalls != 1 || network.llmCalls != 0 || b.state.MediaErrors.Load() != 0 {
 		t.Fatalf("uploads=%d buttons=%d cleanup=%v metadata=%d media=%d llm=%d errors=%d", uploads, buttons, cleanup, network.fxCalls, network.mediaCalls, network.llmCalls, b.state.MediaErrors.Load())
 	}
 }
 
 func TestTwitterIntegrationExplicitTranslationSkipsMediaDownload(t *testing.T) {
-	for _, prefix := range []string{"/translate ", "/translate@nyande_test_bot ", "переведи "} {
+	for _, prefix := range []string{"/translate ", "/translate@nyande_test_bot "} {
 		t.Run(prefix, func(t *testing.T) {
 			b, network, ctx := twitterIntegrationBot(t, "Original full post *source* text.")
 			network.media = true
@@ -282,6 +310,65 @@ func TestTwitterIntegrationOtherBotCommandIsIgnored(t *testing.T) {
 	}
 	if len(network.snapshot()) != 0 || network.fxCalls != 0 || network.llmCalls != 0 || network.mediaCalls != 0 {
 		t.Fatal("command addressed to another bot was processed")
+	}
+}
+
+func TestTwitterIntegrationNaturalTranslationUsesTool(t *testing.T) {
+	for _, request := range []string{"переведи ", "Нянде, переведи на английский, пожалуйста: ", "Please translate this post into English: ", "reply"} {
+		t.Run(request, func(t *testing.T) {
+			b, network, ctx := twitterIntegrationBot(t, "Original full post *source* text.")
+			network.media = true
+			network.toolArgs = `{"language":"en","url":"` + twitterIntegrationURL + `"}`
+			message := twitterIntegrationMessage(request + twitterIntegrationURL)
+			if request == "reply" {
+				message.Text = "Переведи на английский"
+				message.ReplyToMessage = twitterIntegrationMessage(twitterIntegrationURL)
+				network.toolArgs = `{"language":"en"}`
+			}
+			if err := b.HandleUpdate(ctx, telegram.Update{Message: message}); err != nil {
+				t.Fatal(err)
+			}
+			answers := 0
+			for _, sent := range network.snapshot() {
+				if sent.Method == "sendMessage" {
+					answers++
+					if !strings.Contains(sent.Text, "Переведённый") || sent.ReplyMarkup != nil {
+						t.Fatalf("unexpected translation answer: %+v", sent)
+					}
+				}
+				if sent.Method == "sendVideo" || sent.Method == "sendPhoto" || sent.Method == "sendDocument" {
+					t.Fatal("translation request uploaded media")
+				}
+			}
+			if answers != 1 || network.llmCalls != 3 || network.fxCalls != 1 || network.mediaCalls != 0 {
+				t.Fatalf("answers=%d llm=%d metadata=%d media=%d", answers, network.llmCalls, network.fxCalls, network.mediaCalls)
+			}
+			if !strings.Contains(strings.Join(network.llmRequests, ""), network.postText) {
+				t.Fatal("translation model did not receive the complete post")
+			}
+		})
+	}
+}
+
+func TestTwitterIntegrationNaturalTranslationHonorsGroupTriggersAndLLMOff(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(fmt.Sprint("disabled_", disabled), func(t *testing.T) {
+			b, network, ctx := twitterIntegrationBot(t, "source")
+			message := twitterIntegrationMessage("переведи на английский " + twitterIntegrationURL)
+			if disabled {
+				if err := b.HandleUpdate(ctx, telegram.Update{Message: twitterIntegrationMessage("/llm off")}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				message.Chat.Type = "supergroup"
+			}
+			if err := b.HandleUpdate(ctx, telegram.Update{Message: message}); err != nil {
+				t.Fatal(err)
+			}
+			if network.fxCalls != 0 || network.mediaCalls != 0 || network.llmCalls != 0 {
+				t.Fatal("untriggered or disabled translation made an external request")
+			}
+		})
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/mmionya/nyande-bot/internal/config"
 	"github.com/mmionya/nyande-bot/resources"
@@ -397,13 +396,7 @@ func cleanText(value string) string {
 }
 
 func truncateCaption(value string) string {
-	value = strings.TrimSpace(value)
-	const limit = 1024
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	runes := []rune(value)
-	return strings.TrimSpace(string(runes[:limit-1])) + "…"
+	return truncateCaptionTo(value, mediaCaptionLimit)
 }
 
 const browserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36"

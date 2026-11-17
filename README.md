@@ -33,16 +33,24 @@ Send a public X/Twitter post URL to receive the post even when it has no photos
 or videos. Text posts include the full text, author and source URL; long posts
 are split into messages. Literal asterisks and code in the original are preserved.
 
-The **Перевести** button translates a post into Russian. Use `/translate en URL`
-or reply to a post with `/translate en` for another language. `/translate` defaults
-to Russian and also accepts replies to ordinary text messages. Supported language
-codes: `ru`, `en`, `kk`, `uk`, `de`, `fr`, `es`, `ja`, `zh`. The short request
-`переведи URL` also works.
+Use `/translate en URL`, reply to a post or text message with `/translate en`,
+or supply text directly: `/translate en Привет, мир!`. `/translate` defaults to
+Russian. Supported language codes: `ru`, `en`, `kk`, `uk`, `de`, `fr`, `es`, `ja`,
+`zh`.
 
-Translation uses the configured LLM, respects the chat's LLM setting and remains
-separate from conversation history. Translating a URL fetches only the post text,
-without downloading its media again. Translations are separate messages; original
-posts remain unchanged. Buttons survive restarts while the public source exists.
+You can also ask the assistant to translate, for example `переведи на английский
+URL`, or reply to a message with your request. In Telegram, the LLM uses the
+`translate_text` tool for X/Twitter URLs, replied messages and supplied text.
+Normal group LLM triggers still apply: mention the bot or use a configured trigger
+word when needed.
+
+Translation uses the configured LLM and respects the chat's LLM setting.
+The translation model request is separate from conversation history; translation
+requests in normal chat remain part of that conversation. `/agent` can also use
+the tool, subject to its task limits, including shortened results for very long
+text. Use `/translate` when you need a complete long translation. Translating a
+URL fetches only the post text, without downloading its media again. Translations
+are separate messages; original posts remain unchanged.
 
 ## Telegram agent tasks
 
@@ -486,6 +494,7 @@ an invalid ban file stops startup instead of silently losing the bans.
 | `/ping` | check whether the bot is available |
 | `/stats` | show statistics for the current process |
 | `/reset` | clear LLM history for the current chat |
+| `/translate [language] [URL or text]` | translate an X/Twitter post, supplied text or replied message in Telegram |
 | `/remember fact` | save a long-term memory for the current user and chat |
 | `/memory` | list long-term memories and their ids |
 | `/forget id` | delete one long-term memory by id |

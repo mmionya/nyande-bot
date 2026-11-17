@@ -48,7 +48,7 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 			if json.NewDecoder(response.Body).Decode(&payload) == nil {
 				post := redditPostData(payload)
 				if post != nil {
-					caption := firstMapString(post, "title", "selftext")
+					caption := redditCaption(post)
 					imageURLs := redditImageURLs(post)
 					if len(imageURLs) > 0 {
 						items := make([]Media, 0, len(imageURLs))
@@ -66,7 +66,7 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 							items = append(items, item)
 						}
 						if len(items) > 0 {
-							return Result{Items: items, Caption: cleanText(caption), Source: "reddit"}, nil
+							return Result{Items: items, Caption: caption, Source: "reddit"}, nil
 						}
 					}
 				}
@@ -122,6 +122,14 @@ func redditPostData(payload any) map[string]any {
 	child, _ := children[0].(map[string]any)
 	post, _ := child["data"].(map[string]any)
 	return post
+}
+
+func redditCaption(post map[string]any) string {
+	author := cleanText(firstMapString(post, "author"))
+	if author == "[deleted]" {
+		author = ""
+	}
+	return formatMediaCaption(cleanText(firstMapString(post, "title", "selftext")), author)
 }
 
 func redditImageURLs(post map[string]any) []string {

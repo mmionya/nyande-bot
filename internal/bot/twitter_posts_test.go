@@ -59,7 +59,7 @@ func TestTwitterPlainChunksKeepWhitespaceAndUTF16(t *testing.T) {
 	}
 }
 
-func TestTwitterTextPostSendsCompleteLiteralTextAndButtons(t *testing.T) {
+func TestTwitterTextPostSendsCompleteLiteralTextWithoutButtons(t *testing.T) {
 	b, calls := newTwitterPostsUnitBot(t, func(r *http.Request, call twitterPostsUnitCall) (int, string) {
 		if !strings.HasSuffix(r.URL.Path, "/sendMessage") {
 			t.Fatalf("unexpected request: %s", call.Method)
@@ -78,9 +78,8 @@ func TestTwitterTextPostSendsCompleteLiteralTextAndButtons(t *testing.T) {
 		if call.Body["chat_id"] != float64(42) || call.Body["parse_mode"] != nil || call.Body["entities"] != nil {
 			t.Errorf("source scope or literal formatting changed: %#v", call.Body)
 		}
-		markup, _ := json.Marshal(call.Body["reply_markup"])
-		if !strings.Contains(string(markup), `"callback_data":"twtranslate:123"`) {
-			t.Errorf("missing button: %s", markup)
+		if call.Body["reply_markup"] != nil {
+			t.Errorf("unexpected translation button: %#v", call.Body["reply_markup"])
 		}
 	}
 	if joined.String() != post.Text+"\n\n"+post.Author+"\n"+post.URL {

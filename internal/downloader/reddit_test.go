@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/mmionya/nyande-bot/internal/config"
 )
@@ -79,7 +80,7 @@ func TestRedditGalleryStopsAtSuccessfulMediaLimit(t *testing.T) {
 		switch request.URL.Path {
 		case "/comments/abc.json":
 			contentType = "application/json"
-			body = `[{"data":{"children":[{"data":{"title":"Gallery caption","gallery_data":{"items":[{"media_id":"a"},{"media_id":"b"},{"media_id":"c"},{"media_id":"d"}]},"media_metadata":{"a":{"s":{"u":"https://i.redd.it/a.jpg"}},"b":{"s":{"u":"https://i.redd.it/b.jpg"}},"c":{"s":{"u":"https://i.redd.it/c.jpg"}},"d":{"s":{"u":"https://i.redd.it/d.jpg"}}}}}]}}]`
+			body = `[{"data":{"children":[{"data":{"title":"Gallery caption","author":"cat_poster","gallery_data":{"items":[{"media_id":"a"},{"media_id":"b"},{"media_id":"c"},{"media_id":"d"}]},"media_metadata":{"a":{"s":{"u":"https://i.redd.it/a.jpg"}},"b":{"s":{"u":"https://i.redd.it/b.jpg"}},"c":{"s":{"u":"https://i.redd.it/c.jpg"}},"d":{"s":{"u":"https://i.redd.it/d.jpg"}}}}}]}}]`
 		case "/b.jpg":
 			status = http.StatusForbidden
 		case "/a.jpg", "/c.jpg":
@@ -89,11 +90,58 @@ func TestRedditGalleryStopsAtSuccessfulMediaLimit(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
 	})
 	result, err := d.Download(context.Background(), "https://www.reddit.com/gallery/abc/")
-	if err != nil || result.Source != "reddit" || result.Caption != "Gallery caption" || len(result.Items) != 2 {
+	if err != nil || result.Source != "reddit" || result.Caption != "Gallery caption\n\ncat_poster" || len(result.Items) != 2 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	if !slices.Equal(paths, []string{"/comments/abc.json", "/a.jpg", "/b.jpg", "/c.jpg"}) || result.Items[0].Name != "a.jpg" || result.Items[1].Name != "c.jpg" {
 		t.Fatalf("gallery limit must preserve successful item order: paths=%v items=%+v", paths, result.Items)
+	}
+}
+
+func TestRedditCaption(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		post map[string]any
+		want string
+	}{
+		{
+			name: "title and author",
+			post: map[string]any{"title": "Cats &amp; kittens", "selftext": "Post body", "author": "cat_poster"},
+			want: "Cats & kittens\n\ncat_poster",
+		},
+		{
+			name: "selftext fallback",
+			post: map[string]any{"title": "", "selftext": "Post body", "author": "cat_poster"},
+			want: "Post body\n\ncat_poster",
+		},
+		{
+			name: "missing author",
+			post: map[string]any{"title": "Post title"},
+			want: "Post title",
+		},
+		{
+			name: "deleted author",
+			post: map[string]any{"title": "Post title", "author": " [deleted] "},
+			want: "Post title",
+		},
+		{
+			name: "author only",
+			post: map[string]any{"author": "cat_poster"},
+			want: "cat_poster",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := redditCaption(test.post); got != test.want {
+				t.Fatalf("redditCaption() = %q; want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestRedditCaptionTruncationKeepsAuthor(t *testing.T) {
+	caption := redditCaption(map[string]any{"title": strings.Repeat("\u043a\u043e\u0442", 500), "author": "cat_poster"})
+	if !utf8.ValidString(caption) || utf8.RuneCountInString(caption) > mediaCaptionLimit || !strings.HasSuffix(caption, "\u2026\n\ncat_poster") {
+		t.Fatalf("long caption lost author or exceeded limit: %q", caption)
 	}
 }
 

@@ -337,7 +337,7 @@ func TestInstagramVXFallback(t *testing.T) {
 				body := ""
 				switch request.URL.Hostname() {
 				case "www.instagram.com":
-					body = `<meta property="og:description" content="A reel caption">`
+					body = `<meta property="og:description" content="A reel caption"><meta name="author" content="@cat">`
 				case "vxinstagram.com":
 					vxRequests++
 					if request.URL.Path != "/offload/ABC123" {
@@ -371,7 +371,7 @@ func TestInstagramVXFallback(t *testing.T) {
 			value, _ := url.Parse("https://www.instagram.com/" + test.path + "/ABC123/")
 			result, err := d.downloadInstagram(ctx, value)
 			if test.wantErr == "" {
-				if err != nil || len(result.Items) != 1 || result.Items[0].Kind != "video" || string(result.Items[0].Data) != "mp4" || result.Source != "instagram" || result.Caption != "A reel caption" {
+				if err != nil || len(result.Items) != 1 || result.Items[0].Kind != "video" || string(result.Items[0].Data) != "mp4" || result.Source != "instagram" || result.Caption != "A reel caption\n\n@cat" {
 					t.Fatalf("result=%+v err=%v", result, err)
 				}
 				if apifyRequests != 0 {

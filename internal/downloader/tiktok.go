@@ -98,17 +98,11 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 	if len(items) == 0 {
 		return Result{}, errors.New(resources.Get("downloader.error.tikwm_returned_no_valid_media_urls"))
 	}
-	caption := cleanText(payload.Data.Title)
-	if payload.Data.Author.Nickname != "" {
-		author := payload.Data.Author.Nickname
-		if payload.Data.Author.UniqueID != "" {
-			author += " (@" + payload.Data.Author.UniqueID + ")"
-		}
-		if caption != "" {
-			caption += "\n\n"
-		}
-		caption += author
+	author := strings.TrimSpace(payload.Data.Author.Nickname)
+	if handle := strings.TrimSpace(payload.Data.Author.UniqueID); handle != "" {
+		author = strings.TrimSpace(author + " (@" + handle + ")")
 	}
+	caption := formatMediaCaption(cleanText(payload.Data.Title), cleanText(author))
 	return Result{Items: items, Caption: caption, Source: "tiktok"}, nil
 }
 

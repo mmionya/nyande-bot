@@ -140,7 +140,7 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Post: &post, Caption: cleanText(strings.TrimSpace(post.Text + "\n\n" + post.Author)), Source: "twitter"}
+	result := Result{Post: &post, Caption: formatMediaCaption(post.Text, post.Author), Source: "twitter"}
 	if !declared {
 		if post.Text == "" {
 			return Result{}, errors.New(resources.Get("twitter.error.no_media"))

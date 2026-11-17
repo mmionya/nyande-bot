@@ -47,6 +47,9 @@ func TestTwitterTextPostsKeepFullTextAndAttribution(t *testing.T) {
 		if utf8.RuneCountInString(result.Caption) > 1024 || utf8.RuneCountInString(result.Post.Text) <= 1024 {
 			t.Fatalf("caption/full text sizes: %d/%d", utf8.RuneCountInString(result.Caption), utf8.RuneCountInString(result.Post.Text))
 		}
+		if !strings.HasPrefix(result.Caption, "First & second\n\n") || !strings.HasSuffix(result.Caption, "…\n\nAlice & Bob (@alice)") {
+			t.Fatalf("caption lost paragraphs or author: %q", result.Caption)
+		}
 	}
 }
 
@@ -141,7 +144,7 @@ func TestTwitterMediaDownloadAndFailures(t *testing.T) {
 		if metadata != 1 || media != 1 || (err != nil) != fail {
 			t.Fatalf("fail=%t metadata=%d media=%d err=%v", fail, metadata, media, err)
 		}
-		if !fail && (len(result.Items) != 1 || result.Items[0].Kind != "photo" || string(result.Items[0].Data) != "image bytes" || result.Caption != "Caption Alice (@alice)" || result.Post == nil || result.Post.Text != "Caption") {
+		if !fail && (len(result.Items) != 1 || result.Items[0].Kind != "photo" || string(result.Items[0].Data) != "image bytes" || result.Caption != "Caption\n\nAlice (@alice)" || result.Post == nil || result.Post.Text != "Caption") {
 			t.Fatalf("media regression: %+v", result)
 		}
 		if fail && result.Post != nil {

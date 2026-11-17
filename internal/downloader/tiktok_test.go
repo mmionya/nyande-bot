@@ -39,7 +39,7 @@ func TestDownloadTikTokShareLinks(t *testing.T) {
 					if got := request.PostForm.Get("url"); got != test.wantURL {
 						t.Fatalf("TikWM URL = %q, want %q", got, test.wantURL)
 					}
-					body = `{"code":0,"data":{"hdplay":"https://8.8.8.8/video.mp4"}}`
+					body = `{"code":0,"data":{"title":"Video caption","author":{"nickname":"Cat author","unique_id":"cat"},"hdplay":"https://8.8.8.8/video.mp4"}}`
 					contentType = "application/json"
 				case "https://8.8.8.8/video.mp4":
 					mediaCalls++
@@ -61,6 +61,9 @@ func TestDownloadTikTokShareLinks(t *testing.T) {
 			}
 			if result.Source != "tiktok" || len(result.Items) != 1 || result.Items[0].Kind != "video" || string(result.Items[0].Data) != "video" {
 				t.Fatalf("unexpected download result: %#v", result)
+			}
+			if result.Caption != "Video caption\n\nCat author (@cat)" {
+				t.Fatalf("author must be a separate paragraph: %q", result.Caption)
 			}
 		})
 	}

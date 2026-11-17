@@ -382,20 +382,20 @@ func isHLSURL(raw string) bool {
 func pinterestCaption(pin map[string]any) string {
 	title := cleanText(firstMapString(pin, "title", "grid_title"))
 	description := cleanText(firstMapString(pin, "seo_description", "description"))
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 2)
 	if title != "" {
 		parts = append(parts, title)
 	}
 	if description != "" && description != title {
 		parts = append(parts, description)
 	}
+	var author string
 	for _, key := range []string{"closeup_attribution", "pinner"} {
 		if authorData, ok := pin[key].(map[string]any); ok {
-			if author := cleanText(firstMapString(authorData, "full_name", "username")); author != "" {
-				parts = append(parts, author)
+			if author = cleanText(firstMapString(authorData, "full_name", "username")); author != "" {
 				break
 			}
 		}
 	}
-	return strings.Join(parts, "\n\n")
+	return formatMediaCaption(strings.Join(parts, "\n\n"), author)
 }

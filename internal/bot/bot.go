@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/mmionya/nyande-bot/internal/access"
 	"github.com/mmionya/nyande-bot/internal/chatlog"
@@ -283,7 +283,7 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 	translationUpdate := false
 	if update.Message != nil {
 		command, _, ok := parseCommand(text, b.identity.Username)
-		translationUpdate = (ok && command == "translate") || twitterTranslationRequest(update.Message) != ""
+		translationUpdate = ok && command == "translate"
 		if ok && (command == "search" || command == "music" || command == "play") {
 			musicUpdate = true
 		}
@@ -509,7 +509,7 @@ func parseCommand(text, botUsername string) (string, string, bool) {
 	command := strings.TrimPrefix(token, "/")
 	arguments := ""
 	if len(fields) > 1 {
-		arguments = strings.Join(fields[1:], " ")
+		arguments = strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
 	}
 	return strings.ToLower(command), arguments, true
 }
@@ -555,8 +555,8 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 	if b.blockedMessage(message) {
 		return nil
 	}
-	if source := twitterTranslationRequest(message); source != "" {
-		return b.translateCommand(ctx, message, source)
+	if twitterTranslationRequest(message) != "" {
+		return b.handleLLM(ctx, message)
 	}
 	supported := supportedURLs(urls)
 	if len(supported) == 0 {
@@ -572,24 +572,24 @@ func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls [
 	return b.handleMediaURL(ctx, message, supported[0])
 }
 
-// Keep explicit short translation requests out of the automatic media path.
-// Language selection and longer instructions use /translate or the button.
+// Let the LLM choose the source and language for translation requests instead
+// of treating their X/Twitter links as automatic media downloads.
 func twitterTranslationRequest(message *telegram.Message) string {
 	if message == nil {
 		return ""
 	}
 	urls := extractURLs(message)
-	if len(urls) != 1 {
-		return ""
-	}
-	value, err := url.Parse(urls[0])
-	if err != nil || !downloader.IsTwitter(value) {
-		return ""
-	}
-	request := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(message.ContentText(), urls[0], "")))
-	switch request {
-	case "переведи", "перевести", "переведи пост", "translate":
-		return urls[0]
+	request := urlPattern.ReplaceAllString(message.ContentText(), "")
+	words := strings.FieldsFunc(strings.ToLower(request), func(r rune) bool { return !unicode.IsLetter(r) })
+	for _, word := range words {
+		switch word {
+		case "переведи", "переведите", "перевести", "translate":
+			for _, rawURL := range urls {
+				if twitterPostID(rawURL) != "" {
+					return rawURL
+				}
+			}
+		}
 	}
 	return ""
 }

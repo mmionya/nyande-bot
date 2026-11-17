@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mmionya/nyande-bot/internal/downloader"
 	"github.com/mmionya/nyande-bot/internal/telegram"
@@ -23,11 +24,11 @@ var (
 	}
 )
 
-const translationUsage = "Используй /translate [ru|en|kk|uk|de|fr|es|ja|zh] [ссылка на X/Twitter] или ответь этой командой на текст. По умолчанию перевожу на русский."
+const translationUsage = "Используй /translate [ru|en|kk|uk|de|fr|es|ja|zh] [текст или ссылка на X/Twitter] или ответь этой командой на текст. По умолчанию перевожу на русский."
 
 func twitterPostID(rawURL string) string {
 	parsed, err := url.Parse(normalizeLink(rawURL))
-	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || !downloader.IsTwitter(parsed) {
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.User != nil || parsed.Port() != "" || !downloader.IsTwitter(parsed) {
 		return ""
 	}
 	match := twitterTranslationPath.FindStringSubmatch(parsed.Path)
@@ -35,19 +36,6 @@ func twitterPostID(rawURL string) string {
 		return ""
 	}
 	return match[1]
-}
-
-func (b *Bot) twitterTranslationMarkup(post downloader.Post) any {
-	if b.llm == nil || !b.llm.Enabled() {
-		return nil
-	}
-	id := twitterPostID(post.URL)
-	if id == "" || strings.TrimSpace(post.Text) == "" {
-		return nil
-	}
-	return map[string]any{"inline_keyboard": [][]map[string]string{{{
-		"text": "Перевести на русский", "callback_data": twitterTranslatePrefix + id,
-	}}}}
 }
 
 // Preserve source whitespace and literal Markdown, including at message boundaries.
@@ -94,11 +82,7 @@ func (b *Bot) sendTwitterTextPost(ctx context.Context, message *telegram.Message
 		if err := ctx.Err(); err != nil {
 			return sent, err
 		}
-		var markup any
-		if !b.llmDisabled(message.Chat.ID) {
-			markup = b.twitterTranslationMarkup(post)
-		}
-		part, err := b.telegram.SendMessage(ctx, message.Chat.ID, chunk, message.MessageID, markup)
+		part, err := b.telegram.SendMessage(ctx, message.Chat.ID, chunk, message.MessageID, nil)
 		if err != nil {
 			return sent, err
 		}
@@ -128,6 +112,9 @@ func twitterIDFromMarkup(markup *telegram.InlineKeyboardMarkup) string {
 }
 
 func (b *Bot) translateCommand(ctx context.Context, message *telegram.Message, arguments string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if message == nil || message.From == nil || message.From.IsBot || message.SenderChat != nil || b.blockedMessage(message) || b.silentModeration(message.Chat.ID) {
 		return nil
 	}
@@ -136,34 +123,20 @@ func (b *Bot) translateCommand(ctx context.Context, message *telegram.Message, a
 		return err
 	}
 	language := "ru"
-	fields := strings.Fields(arguments)
-	if len(fields) > 0 {
-		if _, ok := translationLanguages[strings.ToLower(fields[0])]; ok {
-			language, fields = strings.ToLower(fields[0]), fields[1:]
-		}
+	text := strings.TrimSpace(arguments)
+	first, rest := text, ""
+	if end := strings.IndexFunc(text, unicode.IsSpace); end >= 0 {
+		first, rest = text[:end], strings.TrimLeftFunc(text[end:], unicode.IsSpace)
 	}
-	var source downloader.Post
-	var id string
-	if len(fields) == 1 {
-		id = twitterPostID(fields[0])
-	} else if len(fields) == 0 && message.ReplyToMessage != nil {
-		reply := message.ReplyToMessage
-		id = twitterIDFromMarkup(reply.ReplyMarkup)
-		if id == "" {
-			id = twitterPostID(strings.TrimSpace(reply.ContentText()))
-		}
-		// Bot posts end with the canonical source URL; prefer it to links quoted in the post.
-		if id == "" && reply.From != nil && b.identity.ID != 0 && reply.From.ID == b.identity.ID {
-			links := extractURLs(reply)
-			for i := len(links) - 1; i >= 0 && id == ""; i-- {
-				id = twitterPostID(links[i])
-			}
-		}
-		if id == "" {
-			source.Text = reply.ContentText()
-		}
+	if _, ok := translationLanguages[strings.ToLower(first)]; ok {
+		language, text = strings.ToLower(first), rest
 	}
-	if len(fields) > 1 || (id == "" && strings.TrimSpace(source.Text) == "") {
+	var rawURL string
+	if !strings.ContainsFunc(text, unicode.IsSpace) && (twitterPostID(text) != "" || strings.Contains(text, "://") || strings.HasPrefix(text, "x.com/") || strings.HasPrefix(text, "twitter.com/")) {
+		rawURL, text = text, ""
+	}
+	id, source, err := b.resolveTranslationSource(message, text, rawURL)
+	if err != nil {
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID, translationUsage, message.MessageID, nil)
 		return err
 	}
@@ -221,38 +194,14 @@ func (b *Bot) translateTwitterSource(parent context.Context, message *telegram.M
 		}
 		return err
 	}
-	if id != "" {
-		if !b.twitterTranslationAllowed(message) {
+	result, err := b.translateResolvedSource(ctx, message, language, id, source)
+	if err != nil {
+		if errors.Is(err, errTranslationUnavailable) {
 			return nil
 		}
-		if b.downloader == nil {
-			return fail(errors.New("twitter reader unavailable"), "Не удалось получить текст публикации. Попробуй позже.")
-		}
-		source, err = b.downloader.TwitterPost(ctx, "https://x.com/i/status/"+id)
-		if err != nil {
-			return fail(err, "Не удалось получить текст публикации. Попробуй позже.")
-		}
+		return fail(err, translationErrorText(err))
 	}
-	if strings.TrimSpace(source.Text) == "" {
-		return fail(errors.New("empty translation source"), "В публикации нет текста для перевода.")
-	}
-	if !b.twitterTranslationAllowed(message) {
-		return nil
-	}
-	if b.state != nil {
-		b.state.LLMCalls.Add(1)
-	}
-	translated, err := b.llm.Translate(ctx, source.Text, language)
-	if err != nil {
-		if b.state != nil {
-			b.state.LLMErrors.Add(1)
-		}
-		return fail(err, "Не удалось перевести текст. Попробуй позже.")
-	}
-	if strings.TrimSpace(translated) == "" {
-		return fail(errors.New("empty translation"), "Не удалось перевести текст. Попробуй позже.")
-	}
-	text := "Перевод на " + translationLanguages[language] + ":\n\n" + translated + twitterPostFooter(source)
+	text := "Перевод на " + translationLanguages[language] + ":\n\n" + result.Translation + twitterPostFooter(downloader.Post{Author: result.Author, URL: result.SourceURL})
 	for _, chunk := range splitTwitterPlainText(text, telegramMessageLimit) {
 		if err := ctx.Err(); err != nil {
 			return fail(err, "Не удалось отправить перевод полностью.")

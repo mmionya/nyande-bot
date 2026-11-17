@@ -92,17 +92,6 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 			resources.Get("downloader.error.telegram_send"), nil)
 		return sent, sendErr
 	}
-	if len(result.Items) > 0 && result.Post != nil && len(sent) > 0 && !b.llmDisabled(message.Chat.ID) {
-		if markup := b.twitterTranslationMarkup(*result.Post); markup != nil {
-			// The media is already delivered. A failed button edit must never
-			// turn success into a retry that uploads the files a second time.
-			buttonCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			if err := b.telegram.EditMessageReplyMarkup(buttonCtx, message.Chat.ID, sent[0].MessageID, markup); err != nil {
-				log.Printf("[twitter] translation button unavailable chat=%d message=%d", message.Chat.ID, sent[0].MessageID)
-			}
-			cancel()
-		}
-	}
 	_ = b.telegram.DeleteMessage(ctx, message.Chat.ID, status.MessageID)
 	log.Printf(resources.Get("telegram.log.media_sent"), message.Chat.ID, message.MessageID, len(sent), time.Since(sendStarted).Milliseconds(), time.Since(started).Milliseconds())
 	return sent, nil
@@ -330,7 +319,7 @@ func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, a
 	if message.From != nil {
 		userName = message.From.FirstName
 	}
-	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message), b.createFileTool(message), b.gifTool(message, attachments, err), b.reactionTool(message)}
+	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message), b.translationTool(message), b.createFileTool(message), b.gifTool(message, attachments, err), b.reactionTool(message)}
 	tools = append(tools, b.llm.MediaSearchTools()...)
 	tools = append(tools, b.memoryTools(message)...)
 	tools = append(tools, b.chatlogTools(message)...)
@@ -342,7 +331,7 @@ func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, a
 		allowed := make([]llm.Tool, 0, 4)
 		for _, tool := range tools {
 			switch tool.Name {
-			case "read_webpage", "create_file", "search_chat_messages", "get_recent_messages":
+			case "read_webpage", "create_file", "search_chat_messages", "get_recent_messages", "translate_text":
 				execute := tool.Execute
 				tool.Execute = func(ctx context.Context, arguments map[string]string) (string, error) {
 					if err := ctx.Err(); err != nil {

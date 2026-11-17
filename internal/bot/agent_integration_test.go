@@ -44,7 +44,7 @@ func TestAgentDocumentToFileFlowUsesScopedToolsAndFormatting(t *testing.T) {
 				if !strings.Contains(user, "Revenue: 120") || !strings.Contains(user, "Prepare the report") {
 					t.Errorf("task and reply document missing: %q", user)
 				}
-				allowed := map[string]bool{"current_time": true, "read_webpage": true, "create_file": true}
+				allowed := map[string]bool{"current_time": true, "read_webpage": true, "create_file": true, "translate_text": true}
 				for _, tool := range payload.Tools {
 					if !allowed[tool.Function.Name] {
 						t.Errorf("unexpected agent capability: %s", tool.Function.Name)

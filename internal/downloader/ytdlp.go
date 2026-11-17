@@ -290,17 +290,14 @@ func ytdlpCaptionFromInfo(info map[string]any, titleOnly bool) string {
 	}
 	description, _ := info["description"].(string)
 	uploader := firstMapString(info, "uploader", "channel", "creator")
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 2)
 	if title != "" {
 		parts = append(parts, title)
 	}
 	if strings.TrimSpace(description) != "" && strings.TrimSpace(description) != strings.TrimSpace(title) {
 		parts = append(parts, strings.TrimSpace(description))
 	}
-	if strings.TrimSpace(uploader) != "" {
-		parts = append(parts, strings.TrimSpace(uploader))
-	}
-	return strings.Join(parts, "\n\n")
+	return formatMediaCaption(strings.Join(parts, "\n\n"), uploader)
 }
 
 func mimeForName(name string) string {

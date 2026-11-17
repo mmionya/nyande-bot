@@ -390,19 +390,18 @@ func trustedXiaohongshuMediaURL(raw string) string {
 func xiaohongshuCaption(note map[string]any) string {
 	title := cleanText(firstMapString(note, "title"))
 	description := cleanText(firstMapString(note, "desc", "description"))
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 2)
 	if title != "" {
 		parts = append(parts, title)
 	}
 	if description != "" && description != title {
 		parts = append(parts, description)
 	}
+	var author string
 	if user, ok := note["user"].(map[string]any); ok {
-		if author := cleanText(firstMapString(user, "nickname", "name")); author != "" {
-			parts = append(parts, author)
-		}
+		author = cleanText(firstMapString(user, "nickname", "name"))
 	}
-	return strings.Join(parts, "\n\n")
+	return formatMediaCaption(strings.Join(parts, "\n\n"), author)
 }
 
 func int64FromJSON(value any) int64 {

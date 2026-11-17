@@ -52,7 +52,7 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 	}
 	canonical := "https://www.instagram.com/" + mediaType + "/" + match[2] + "/"
 	embed := canonical + "embed/captioned/"
-	caption := ""
+	var post Post
 	canonicalURL, _ := url.Parse(canonical)
 	// The extractor handles both Reels and ordered carousels; avoid fetching the
 	// same Instagram pages ourselves before it gets a chance to succeed.
@@ -80,13 +80,14 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 			continue
 		}
 		urls, pageCaption := instagramPageMedia(page, mediaType == "p")
-		caption = firstNonEmpty(caption, pageCaption)
+		post.Text = firstNonEmpty(post.Text, pageCaption)
+		post.Author = firstNonEmpty(post.Author, instagramPageAuthor(page))
 		if len(urls) == 0 {
 			continue
 		}
 		items, err := d.downloadInstagramItems(ctx, urls, canonical)
 		if err == nil && len(items) > 0 {
-			return Result{Items: items, Caption: caption, Source: "instagram"}, nil
+			return Result{Items: items, Caption: formatMediaCaption(post.Text, post.Author), Source: "instagram"}, nil
 		}
 		if errors.Is(err, ErrVideoCompression) || ctx.Err() != nil {
 			return Result{}, err
@@ -102,7 +103,7 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 		item, err := d.downloadInstagramVX(ctx, match[2], canonical)
 		log.Printf(resources.Get("downloader.log.instagram_stage"), "vxinstagram", time.Since(started).Milliseconds(), err == nil)
 		if err == nil {
-			return Result{Items: []Media{item}, Caption: caption, Source: "instagram"}, nil
+			return Result{Items: []Media{item}, Caption: formatMediaCaption(post.Text, post.Author), Source: "instagram"}, nil
 		}
 		if errors.Is(err, ErrVideoCompression) || ctx.Err() != nil {
 			return Result{}, err
@@ -114,12 +115,9 @@ func (d *Downloader) downloadInstagram(ctx context.Context, value *url.URL) (Res
 	}
 	if d.cfg.APIFYToken != "" {
 		started = time.Now()
-		result, err := d.downloadInstagramApify(ctx, canonical)
+		result, err := d.downloadInstagramApify(ctx, canonical, post)
 		log.Printf(resources.Get("downloader.log.instagram_stage"), "apify", time.Since(started).Milliseconds(), err == nil)
 		if err == nil {
-			if result.Caption == "" {
-				result.Caption = caption
-			}
 			return result, nil
 		}
 		combined = errors.Join(combined, err)
@@ -258,7 +256,36 @@ func cleanInstagramDescription(value string) string {
 	return cleanText(value)
 }
 
-func (d *Downloader) downloadInstagramApify(ctx context.Context, postURL string) (Result, error) {
+// Only explicit page attribution is usable here. An owner/username elsewhere
+// in embedded JSON may belong to a commenter or a recommended post.
+func instagramPageAuthor(page string) string {
+	return cleanText(html.UnescapeString(metaValue(page, "author")))
+}
+
+func instagramAuthor(name, username string) string {
+	name = cleanText(name)
+	username = strings.TrimPrefix(cleanText(username), "@")
+	if username == "" {
+		return name
+	}
+	if name == "" || name == username || name == "@"+username {
+		return "@" + username
+	}
+	return name + " (@" + username + ")"
+}
+
+func instagramApifyCaption(item map[string]any, fallback Post) string {
+	name, username := firstMapString(item, "ownerFullName"), firstMapString(item, "ownerUsername")
+	if owner, ok := item["owner"].(map[string]any); ok {
+		name = firstNonEmpty(name, firstMapString(owner, "full_name", "fullName"))
+		username = firstNonEmpty(username, firstMapString(owner, "username"))
+	}
+	text := firstNonEmpty(cleanText(firstMapString(item, "caption", "text", "description", "alt")), fallback.Text)
+	author := firstNonEmpty(instagramAuthor(name, username), fallback.Author)
+	return formatMediaCaption(text, author)
+}
+
+func (d *Downloader) downloadInstagramApify(ctx context.Context, postURL string, fallback Post) (Result, error) {
 	if d.cfg.APIFYToken == "" {
 		return Result{}, errors.New(resources.Get("downloader.error.instagram_hid_this_post_apify_token_is_required_for_the_fallback"))
 	}
@@ -307,8 +334,7 @@ func (d *Downloader) downloadInstagramApify(ctx context.Context, postURL string)
 	if err != nil {
 		return Result{}, err
 	}
-	caption := firstMapString(items[0], "caption", "text", "description", "alt")
-	return Result{Items: downloaded, Caption: cleanText(caption), Source: "instagram"}, nil
+	return Result{Items: downloaded, Caption: instagramApifyCaption(items[0], fallback), Source: "instagram"}, nil
 }
 
 func collectApifyMedia(item map[string]any) []string {
