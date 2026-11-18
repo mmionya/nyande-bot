@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mmionya/nyande-bot/internal/telegram"
@@ -100,7 +101,7 @@ func TestTGSRejectsUnboundedAndExternalResources(t *testing.T) {
 }
 
 func TestTelegramStickerMessages(t *testing.T) {
-	for _, mode := range []string{"bare", "reply", "preview", "download preview", "vision disabled", "broken", "download failure", "group unaddressed", "group reply", "group media reply"} {
+	for _, mode := range []string{"bare", "reply", "preview", "download preview", "vision disabled", "broken", "download failure", "group unaddressed", "group reply", "group media reply", "group media animated reply", "group media video reply", "private media reply"} {
 		t.Run(mode, func(t *testing.T) {
 			b := concurrentTestBot()
 			b.cfg.MaxFileSize = 20 * 1024 * 1024
@@ -116,18 +117,23 @@ func TestTelegramStickerMessages(t *testing.T) {
 			}
 			if strings.HasPrefix(mode, "group") {
 				message.Chat.Type = "supergroup"
-				if mode == "group reply" || mode == "group media reply" {
+				if mode == "group reply" {
 					message.ReplyToMessage = &telegram.Message{MessageID: 3, From: &telegram.User{ID: 99}}
 				}
-				if mode == "group media reply" {
-					b.media.Put(1, []telegram.Message{{MessageID: 3}}, []cachedAttachment{{Kind: "photo", Data: []byte("cached image must not replace current sticker")}})
-				}
+			}
+			if strings.HasPrefix(mode, "group media") || mode == "private media reply" {
+				message.ReplyToMessage = &telegram.Message{MessageID: 3, From: &telegram.User{ID: 99}, Video: &telegram.Video{FileID: "downloaded-video"}}
+				b.media.Put(1, []telegram.Message{{MessageID: 3}}, []cachedAttachment{{Kind: "video", Data: []byte("cached video must not replace current sticker")}})
+				message.Sticker.IsAnimated = mode == "group media animated reply"
+				message.Sticker.IsVideo = mode == "group media video reply"
 			}
 			calls, downloads := 0, 0
+			var requests atomic.Int32
 			var sent string
 			previous := http.DefaultTransport
 			t.Cleanup(func() { http.DefaultTransport = previous })
 			http.DefaultTransport = moderationTransport(func(r *http.Request) (*http.Response, error) {
+				requests.Add(1)
 				body := []byte(`{"ok":true,"result":{"message_id":100}}`)
 				switch {
 				case r.URL.Hostname() == "llm.test":
@@ -211,10 +217,10 @@ func TestTelegramStickerMessages(t *testing.T) {
 				if sent != resources.Get("telegram.media.download_failed") {
 					t.Fatal(sent)
 				}
-			case "group unaddressed":
+			case "group unaddressed", "group media reply", "group media animated reply", "group media video reply":
 				want = 0
-				if sent != "" || downloads != 0 {
-					t.Fatal("unaddressed group sticker triggered processing")
+				if sent != "" || downloads != 0 || requests.Load() != 0 {
+					t.Fatalf("ignored group sticker triggered processing: sent=%q downloads=%d requests=%d", sent, downloads, requests.Load())
 				}
 			default:
 				if sent != "Привет!" {

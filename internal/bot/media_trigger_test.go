@@ -43,6 +43,13 @@ func TestGroupLLMRequiresTriggerOnlyForDownloadedMediaReply(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "voice reply to downloaded media",
+			message: telegram.Message{
+				Chat: telegram.Chat{ID: chatID, Type: "group"}, Voice: &telegram.Voice{FileID: "voice"}, ReplyToMessage: botMessage,
+			},
+			want: true,
+		},
+		{
 			name: "trigger without mention or reply",
 			message: telegram.Message{
 				Chat: telegram.Chat{ID: chatID, Type: "group"}, Text: "Нянде, как дела?",

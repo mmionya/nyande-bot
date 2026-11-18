@@ -237,9 +237,11 @@ temporary files are removed after downloading or failure.
 ### Telegram stickers and voice messages
 
 In a private chat, send a sticker or voice message directly. In groups, send it
-as a reply to the bot, including a reply to its media. To ask about someone else's
-sticker or voice message, reply to it with your question and a configured trigger
-word. Unaddressed group messages keep the existing trigger rules.
+as a reply to the bot. Sticker replies to downloaded media or quote cards are
+ignored, following the same trigger rules as text replies. Voice replies to the
+bot's media still work. To ask about someone else's sticker or voice message,
+reply to it with your question and a configured trigger word. Unaddressed group
+messages keep the existing trigger rules.
 
 With `LLM_VISION_ENABLED=true`, the same `LLM_MODEL` receives the actual sticker
 image and reads visible lettering from it. The associated Telegram emoji is not

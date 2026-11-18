@@ -376,9 +376,9 @@ func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, a
 func (b *Bot) shouldHandleGroupLLM(message *telegram.Message) bool {
 	reply := message.ReplyToMessage
 	triggered := containsTriggerWord(message.ContentText(), b.cfg.LLMTriggerWords)
-	// Stickers and voice messages cannot carry a typed trigger. A direct reply
-	// to the bot is an explicit invocation, including replies to its media.
-	if (message.Sticker != nil || message.Voice != nil) && reply != nil && reply.From != nil && reply.From.ID == b.identity.ID {
+	// Voice replies can contain a spoken request, including replies to media.
+	// Sticker replies follow the same trigger rules as text replies.
+	if message.Voice != nil && reply != nil && reply.From != nil && reply.From.ID == b.identity.ID {
 		return true
 	}
 	if b.isQuoteCard(reply) || (reply != nil && b.media != nil && b.media.Has(message.Chat.ID, reply.MessageID)) {
