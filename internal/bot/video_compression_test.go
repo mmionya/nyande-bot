@@ -22,16 +22,23 @@ import (
 func TestTelegramOversizedVideoCompressionDelivery(t *testing.T) {
 	for _, test := range []struct {
 		name, duration, failureKey string
-		encoderFails               bool
+		encoderFails, silent       bool
 	}{
 		{name: "compressed delivery", duration: "1"},
+		{name: "silent compressed delivery", duration: "1", silent: true},
 		{name: "long video refusal", duration: "1200", failureKey: "downloader.error.video_too_long"},
 		{name: "encoder failure", duration: "1", failureKey: "downloader.error.video_compression_generic", encoderFails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			directory := t.TempDir()
 			probe, encoder := filepath.Join(directory, "ffprobe"), filepath.Join(directory, "ffmpeg")
-			probeScript := fmt.Sprintf("#!/bin/sh\nprintf '%%s' '{\"format\":{\"duration\":\"%s\"},\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"width\":320,\"height\":240}]}'\n", test.duration)
+			audioStream := `,{"index":1,"codec_type":"audio","codec_name":"aac"}`
+			uploadMethod, uploadField := "sendVideo", "video"
+			if test.silent {
+				audioStream = ""
+				uploadMethod, uploadField = "sendAnimation", "animation"
+			}
+			probeScript := fmt.Sprintf("#!/bin/sh\nprintf '%%s' '{\"format\":{\"duration\":\"%s\",\"format_name\":\"mp4\"},\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"codec_name\":\"h264\",\"pix_fmt\":\"yuv420p\",\"width\":320,\"height\":240}%s]}'\n", test.duration, audioStream)
 			encoderScript := "#!/bin/sh\nprintf called >> \"$0.calls\"\nfor output do :; done\nprintf compressed-video > \"$output\"\n"
 			if test.encoderFails {
 				encoderScript = "#!/bin/sh\nprintf called >> \"$0.calls\"\nprintf 'private-token connection timeout at /private/video.mp4' >&2\nexit 1\n"
@@ -70,16 +77,19 @@ func TestTelegramOversizedVideoCompressionDelivery(t *testing.T) {
 							t.Fatal(err)
 						}
 						events = append(events, payload.Text)
-					case "sendVideo":
+					case "sendVideo", "sendAnimation":
 						events = append(events, "upload")
 						if test.failureKey != "" {
 							t.Fatal("compression failure must not send the original video")
+						}
+						if method := filepath.Base(request.URL.Path); method != uploadMethod {
+							t.Fatalf("compressed media sent with %s, want %s", method, uploadMethod)
 						}
 						if err := request.ParseMultipartForm(1024 * 1024); err != nil {
 							t.Fatal(err)
 						}
 						defer request.MultipartForm.RemoveAll()
-						file, header, err := request.FormFile("video")
+						file, header, err := request.FormFile(uploadField)
 						if err != nil {
 							t.Fatal(err)
 						}

@@ -207,6 +207,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		{"command": "voice", "description": resources.Get("telegram.command.voice")},
 		{"command": "audio", "description": resources.Get("telegram.command.audio")},
 		{"command": "gif", "description": resources.Get("telegram.command.gif")},
+		{"command": "video", "description": resources.Get("telegram.command.video")},
 		{"command": "mediainfo", "description": resources.Get("telegram.command.mediainfo")},
 	}
 	if err := b.telegram.SetCommands(ctx, commands); err != nil {
@@ -470,6 +471,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 			return b.audioCommand(ctx, message)
 		case "gif":
 			return b.gifCommand(ctx, message)
+		case "video":
+			return b.videoCommand(ctx, message)
 		case "mediainfo":
 			return b.mediainfoCommand(ctx, message)
 		default:

@@ -105,25 +105,25 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 	attachments := make([]cachedAttachment, len(result.Items))
 	for index, item := range result.Items {
 		attachments[index] = cachedAttachment{Kind: item.Kind, Name: item.Name, MIME: item.MIME, Data: item.Data}
-		caption := ""
-		if index == 0 {
-			caption = result.Caption
+		upload, err := b.downloadedUpload(ctx, item)
+		if err != nil {
+			return nil, err
 		}
-		uploads = append(uploads, telegram.Upload{
-			Kind: item.Kind, Name: item.Name, MIME: item.MIME, Data: item.Data, URL: item.URL, Caption: caption,
-		})
+		if index == 0 {
+			upload.Caption = result.Caption
+		}
+		uploads = append(uploads, upload)
 	}
 	var sent []telegram.Message
 	for start := 0; start < len(uploads); {
-		end := min(start+10, len(uploads))
-		chunk := uploads[start:end]
-		canAlbum := len(chunk) >= 2
-		for _, upload := range chunk {
-			if upload.Kind == "animation" {
-				canAlbum = false
-				break
+		end := start + 1
+		if uploads[start].Kind != "animation" {
+			for end < len(uploads) && end-start < 10 && uploads[end].Kind != "animation" {
+				end++
 			}
 		}
+		chunk := uploads[start:end]
+		canAlbum := len(chunk) >= 2
 		if canAlbum {
 			messages, err := b.telegram.SendMediaGroup(ctx, message.Chat.ID, chunk, message.MessageID)
 			if err == nil {
@@ -135,11 +135,19 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 				start = end
 				continue
 			}
+			if !mediaUploadRejected(err) {
+				return sent, err
+			}
 			log.Printf(resources.Get("telegram.log.album_fallback"), message.Chat.ID, message.MessageID, len(chunk), err)
 		}
 		upload := uploads[start]
+		wasAnimation := upload.Kind == "animation"
 		sentMessage, err := b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
-		if err != nil && upload.Kind != "document" {
+		if err != nil && wasAnimation && mediaUploadRejected(err) && strings.HasPrefix(upload.MIME, "video/") {
+			upload.Kind = "video"
+			sentMessage, err = b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
+		}
+		if err != nil && upload.Kind != "document" && (!wasAnimation || mediaUploadRejected(err)) {
 			upload.Kind = "document"
 			sentMessage, err = b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
 		}
@@ -319,7 +327,7 @@ func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, a
 	if message.From != nil {
 		userName = message.From.FirstName
 	}
-	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message), b.translationTool(message), b.createFileTool(message), b.gifTool(message, attachments, err), b.reactionTool(message)}
+	tools := []llm.Tool{b.tomatoTool(message), b.downloadMediaTool(message), b.translationTool(message), b.createFileTool(message), b.gifTool(message, attachments, err), b.videoTool(message, attachments, err), b.reactionTool(message)}
 	tools = append(tools, b.llm.MediaSearchTools()...)
 	tools = append(tools, b.memoryTools(message)...)
 	tools = append(tools, b.chatlogTools(message)...)

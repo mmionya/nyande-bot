@@ -157,9 +157,17 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 		if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" || !hostMatches(parsed.Hostname(), "twimg.com") {
 			continue
 		}
-		item, err := d.fetchMedia(ctx, parsed.String(), candidate.Type)
+		fetchKind := candidate.Type
+		if fetchKind == "animation" {
+			// X serves animated GIFs as MP4, so retain video validation and compression.
+			fetchKind = "video"
+		}
+		item, err := d.fetchMedia(ctx, parsed.String(), fetchKind)
 		if err != nil {
 			return Result{}, err
+		}
+		if candidate.Type == "animation" {
+			item.Kind = "animation"
 		}
 		result.Items = append(result.Items, item)
 		if len(result.Items) >= d.cfg.MaxMediaItems {
@@ -194,21 +202,36 @@ func twitterMediaURLs(raw json.RawMessage) ([]twitterMedia, bool, error) {
 			declared = true
 		}
 	}
-	urls := make([]twitterMedia, 0, len(media.Videos)+len(media.Photos))
+	urls := make([]twitterMedia, 0, len(media.Videos)+len(media.Photos)+len(media.All))
+	indices := make(map[string]int)
+	appendMedia := func(item twitterMedia) {
+		if index, exists := indices[item.URL]; exists {
+			// The same URL can have a generic video type in one array and a GIF
+			// type in another. Keep the more specific animation classification.
+			if urls[index].Type == "video" && item.Type == "animation" {
+				urls[index].Type = "animation"
+			}
+			return
+		}
+		indices[item.URL] = len(urls)
+		urls = append(urls, item)
+	}
 	for _, video := range media.Videos {
-		urls = append(urls, twitterMedia{URL: video.URL, Type: "video"})
+		kind := "video"
+		if video.Type == "gif" || video.Type == "animated_gif" {
+			kind = "animation"
+		}
+		appendMedia(twitterMedia{URL: video.URL, Type: kind})
 	}
 	for _, photo := range media.Photos {
-		urls = append(urls, twitterMedia{URL: photo.URL, Type: "photo"})
+		appendMedia(twitterMedia{URL: photo.URL, Type: "photo"})
 	}
-	if len(urls) == 0 {
-		for _, item := range media.All {
-			switch item.Type {
-			case "photo":
-				urls = append(urls, item)
-			case "video", "gif":
-				urls = append(urls, twitterMedia{URL: item.URL, Type: "video"})
-			}
+	for _, item := range media.All {
+		switch item.Type {
+		case "photo", "video":
+			appendMedia(item)
+		case "gif", "animated_gif":
+			appendMedia(twitterMedia{URL: item.URL, Type: "animation"})
 		}
 	}
 	return urls, declared, nil

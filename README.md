@@ -505,6 +505,7 @@ an invalid ban file stops startup instead of silently losing the bans.
 | `/voice` | convert audio or video into a Telegram Voice message |
 | `/audio` | extract audio from video, audio, a voice message, or a video note as MP3 |
 | `/gif` | convert video into a looping Telegram GIF animation |
+| `/video` | send a GIF, animation or attached video as a regular MP4 video |
 | `/mediainfo` | show technical specs (resolution, FPS, duration, codecs) of photo/video/audio |
 | `/allowlink example.com` | allow a domain in a private chat or as an administrator |
 | `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
@@ -648,6 +649,22 @@ is enabled (eight minutes with the defaults); an earlier request cancellation
 still stops it. Repeated calls for the same URL in one request do not send
 duplicate files. Failures and partial deliveries are reported back to the model.
 Availability still depends on the source site and downloader configuration.
+
+Telegram automatically sends downloaded videos without an audio track and
+X/Twitter GIF posts as looping animations. Videos with an audio track remain
+videos, even if the track is silent. Compatible H.264 MP4 files are uploaded
+without re-encoding; other silent formats are converted when possible. If media
+inspection or conversion fails, the original media is sent. Animations are sent
+separately from photo/video albums, preserving the post's order and caption.
+
+Reply to an animation with `/video` to receive a regular MP4 video, or ask the
+assistant “Send this as a video.” The `convert_to_video` tool uses the same
+conversion. It preserves the duration and copies compatible video streams
+without re-encoding. The original download is used while it remains cached;
+otherwise the bot fetches the attached/replied file from Telegram, subject to
+Telegram's file download limit. `/video` also accepts attached GIFs and videos.
+Both FFmpeg and FFprobe are required, configurable through `FFMPEG_PATH` and
+`FFPROBE_PATH`. Conversion respects `MAX_FILE_SIZE` and Telegram's upload limit.
 
 To convert an attached video or a video you reply to, ask “Make this into a GIF.”
 The Telegram LLM can call `convert_to_gif`, which uses the same conversion as
