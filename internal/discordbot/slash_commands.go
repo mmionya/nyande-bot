@@ -152,7 +152,7 @@ func (b *Bot) slashGIF(s *discordgo.Session, i *discordgo.Interaction, data disc
 	}
 	result, err := b.downloader.Download(ctx, source)
 	if err != nil {
-		fail(downloadErrorText(err), err)
+		fail(downloadErrorText(source, err), err)
 		return
 	}
 	var video []byte

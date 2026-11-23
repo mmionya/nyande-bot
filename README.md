@@ -151,6 +151,11 @@ WHISPER_ENABLED=false
 
 ### Updating an existing systemd installation
 
+To update the binary of a running Linux x86_64 service, run the command in the
+[GitHub release notes](https://github.com/mmionya/nyande-bot/releases/latest)
+as root. The installer downloads the prebuilt binary, verifies its SHA-256
+checksum and saves the previous binary for rollback.
+
 For the root-owned `nyande-bot.service` installation with working directory
 `/root/nyande-bot` and binary `/usr/local/bin/nyande-bot`, run
 `bash scripts/update-systemd.sh` as root on Debian/Ubuntu x86_64. An optional

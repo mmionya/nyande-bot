@@ -87,7 +87,7 @@ func (b *Bot) handleGIF(session *discordgo.Session, message *discordgo.Message) 
 	}
 	result, err := b.downloader.Download(ctx, source)
 	if err != nil {
-		return fail(downloadErrorText(err), err)
+		return fail(downloadErrorText(source, err), err)
 	}
 	var target *downloader.Media
 	for i := range result.Items {

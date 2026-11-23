@@ -228,7 +228,7 @@ func (b *Bot) handleMedia(session *discordgo.Session, message *discordgo.Message
 	if err != nil {
 		b.mediaErrors.Add(1)
 		log.Printf(resources.Get("discord.log.media_download_failed"), message.ChannelID, message.ID, logutil.URL(mediaURL), time.Since(started).Milliseconds(), err)
-		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, downloadErrorText(err))
+		_, _ = session.ChannelMessageEdit(message.ChannelID, status.ID, downloadErrorText(mediaURL, err))
 		return
 	}
 	if len(result.Items) == 0 {
@@ -363,8 +363,11 @@ func (b *Bot) statsText() string {
 	})
 }
 
-func downloadErrorText(err error) string {
+func downloadErrorText(rawURL string, err error) string {
 	if message := downloader.VideoCompressionMessage(err); message != "" {
+		return message
+	}
+	if message := downloader.YouTubeErrorMessage(rawURL, err); message != "" {
 		return message
 	}
 	text := strings.ToLower(err.Error())

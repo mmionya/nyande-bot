@@ -167,6 +167,9 @@ func humanDownloadError(rawURL string, err error) string {
 	if message := downloader.VideoCompressionMessage(err); message != "" {
 		return message
 	}
+	if message := downloader.YouTubeErrorMessage(rawURL, err); message != "" {
+		return message
+	}
 	text := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(text, "too large") || strings.Contains(text, "exceeds"):
@@ -180,7 +183,6 @@ func humanDownloadError(rawURL string, err error) string {
 	case strings.Contains(text, "instagram download failed"):
 		return resources.Get("downloader.error.instagram_failed")
 	default:
-		_ = rawURL
 		return resources.Get("downloader.error.generic")
 	}
 }

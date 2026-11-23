@@ -170,6 +170,36 @@ func IsYouTube(value *url.URL) bool {
 	return hostMatches(value.Hostname(), "youtube.com", "youtu.be", "youtube-nocookie.com")
 }
 
+// YouTubeErrorMessage translates known yt-dlp failures for display in chat.
+func YouTubeErrorMessage(rawURL string, err error) string {
+	value, parseErr := normalizedURL(rawURL)
+	if parseErr != nil || !IsYouTube(value) || err == nil {
+		return ""
+	}
+	text := strings.ToLower(err.Error())
+	index := strings.LastIndex(text, "error: ")
+	if index < 0 {
+		return ""
+	}
+	diagnostic, _, _ := strings.Cut(text[index+len("error: "):], "\n")
+	switch {
+	case strings.Contains(diagnostic, "too many requests"), strings.Contains(diagnostic, "http error 429"), strings.Contains(diagnostic, "rate-limited"):
+		return resources.Get("downloader.error.youtube_rate_limit")
+	case strings.Contains(diagnostic, "private video"), strings.Contains(diagnostic, "video is private"),
+		strings.Contains(diagnostic, "video unavailable"), strings.Contains(diagnostic, "video is unavailable"),
+		strings.Contains(diagnostic, "video has been removed"):
+		return resources.Get("downloader.error.youtube_unavailable")
+	case strings.Contains(diagnostic, "sign in to confirm"), strings.Contains(diagnostic, "sign in to verify"):
+		return resources.Get("downloader.error.youtube_verification")
+	case strings.Contains(diagnostic, "requested format is not available"), strings.Contains(diagnostic, "no video formats found"):
+		return resources.Get("downloader.error.youtube_format")
+	case strings.Contains(diagnostic, "http error 403"):
+		return resources.Get("downloader.error.youtube_forbidden")
+	default:
+		return ""
+	}
+}
+
 func normalizedURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(strings.TrimRight(raw, ".,;:!?)]}"))
 	if !strings.Contains(raw, "://") {

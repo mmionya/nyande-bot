@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -192,13 +193,15 @@ func TestYouTubeYTDLPFormatsFallBackToLowerResolutions(t *testing.T) {
 		t.Fatal(err)
 	}
 	formats := ytdlpMediaFormats(value)
-	wantHeights := []string{"1080", "720", "480", "360", "240", "144"}
-	if len(formats) != len(wantHeights) {
-		t.Fatalf("expected %d YouTube format attempts, got %d", len(wantHeights), len(formats))
+	wantLimits := []string{"1080", "720", "480", "360", "240", "144"}
+	if len(formats) != len(wantLimits) {
+		t.Fatalf("expected %d YouTube format attempts, got %d", len(wantLimits), len(formats))
 	}
-	for index, height := range wantHeights {
-		if !strings.Contains(formats[index], "[height<="+height+"]") {
-			t.Fatalf("format attempt %d must be limited to %sp: %q", index, height, formats[index])
+	for index, limit := range wantLimits {
+		for _, axis := range []string{"width", "height"} {
+			if !strings.Contains(formats[index], "["+axis+"<="+limit+"]") {
+				t.Fatalf("format attempt %d is missing %s limit %s: %q", index, axis, limit, formats[index])
+			}
 		}
 	}
 }
@@ -226,6 +229,61 @@ func TestYouTubeFormatDoesNotExceedHeight(t *testing.T) {
 		} else if err == nil || !strings.Contains(string(output), "Requested format is not available") {
 			t.Fatalf("720p limit must reject 1080p: %s, %v", output, err)
 		}
+	}
+}
+
+func TestYouTubeFormatUsesShortSide(t *testing.T) {
+	ytdlp, err := exec.LookPath("yt-dlp")
+	if err != nil {
+		t.Skip("yt-dlp is not installed")
+	}
+	type format = map[string]any
+	video := func(id string, width, height int) format {
+		return format{
+			"format_id": id, "url": "https://example.com/" + id + ".mp4", "ext": "mp4",
+			"vcodec": "avc1", "acodec": "none", "width": width, "height": height,
+		}
+	}
+	audio := format{"format_id": "a", "url": "https://example.com/a.m4a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a"}
+	portrait := []format{video("p480", 480, 854), video("p720", 720, 1280), video("p1080", 1080, 1920)}
+	landscape := []format{video("l480", 854, 480), video("l720", 1280, 720), video("l1080", 1920, 1080)}
+
+	for _, tc := range []struct {
+		name   string
+		videos []format
+		limit  int
+		want   string
+	}{
+		{"only portrait stream", []format{video("short", 720, 1280)}, 1080, "short+a"},
+		{"best portrait", portrait, 1080, "p1080+a"},
+		{"smaller portrait", portrait, 720, "p720+a"},
+		{"best landscape", landscape, 1080, "l1080+a"},
+		{"smaller landscape", landscape, 720, "l720+a"},
+		{"all streams over cap", portrait, 360, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := map[string]any{
+				"id": "clip", "title": "clip", "extractor": "test", "webpage_url": "https://example.com/clip",
+				"formats": append([]format{audio}, tc.videos...),
+			}
+			data, err := json.Marshal(info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			infoPath := filepath.Join(t.TempDir(), "clip.info.json")
+			if err := os.WriteFile(infoPath, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			output, err := exec.Command(ytdlp, "--ignore-config", "--simulate", "--no-warnings",
+				"--load-info-json", infoPath, "--format", youtubeMediaFormat(tc.limit), "--print", "format_id").CombinedOutput()
+			if tc.want == "" {
+				if err == nil || !strings.Contains(string(output), "Requested format is not available") {
+					t.Fatalf("expected unavailable format, got %s (%v)", output, err)
+				}
+			} else if err != nil || strings.TrimSpace(string(output)) != tc.want {
+				t.Fatalf("expected %s, got %s (%v)", tc.want, output, err)
+			}
+		})
 	}
 }
 

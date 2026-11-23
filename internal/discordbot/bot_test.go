@@ -61,7 +61,7 @@ func TestTruncateMessageCountsRunes(t *testing.T) {
 }
 
 func TestDownloadErrorTextDoesNotExposeInternalError(t *testing.T) {
-	got := downloadErrorText(assertionError("request failed with secret-token"))
+	got := downloadErrorText("https://youtu.be/abcdefghijk", assertionError("request failed with secret-token"))
 	if strings.Contains(got, "secret-token") {
 		t.Fatalf("internal error leaked: %q", got)
 	}
@@ -153,11 +153,12 @@ func TestDownloadErrorTextSelectsResource(t *testing.T) {
 		{fmt.Errorf("download: %w", context.DeadlineExceeded), "discord_download_timeout"},
 		{assertionError("private publication"), "discord_download_failed"},
 		{assertionError("unknown failure"), "discord_download_failed"},
+		{assertionError("yt-dlp failed: ERROR: [youtube] abc: Requested format is not available."), "downloader.error.youtube_format"},
 		{assertionError("too large; 404; timeout"), "discord_download_too_large"},
 		{assertionError("404; timeout"), "discord_download_not_found"},
 	} {
 		t.Run(tc.err.Error(), func(t *testing.T) {
-			if got, want := downloadErrorText(tc.err), resources.Get(tc.key); got != want {
+			if got, want := downloadErrorText("https://youtube.com/shorts/abcdefghijk", tc.err), resources.Get(tc.key); got != want {
 				t.Fatalf("downloadErrorText() = %q, want %q", got, want)
 			}
 		})

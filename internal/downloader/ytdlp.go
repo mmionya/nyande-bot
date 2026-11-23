@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mmionya/nyande-bot/internal/logutil"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -22,11 +24,29 @@ func (d *Downloader) downloadYTDLP(ctx context.Context, value *url.URL) (Result,
 
 func (d *Downloader) downloadYTDLPWithOptions(ctx context.Context, value *url.URL, allowPlaylist bool) (Result, error) {
 	formats := ytdlpMediaFormats(value)
+	options := []string{"--no-playlist"}
+	if allowPlaylist {
+		options = []string{"--yes-playlist", "--playlist-end", strconv.Itoa(d.cfg.MaxMediaItems)}
+	}
+	canRetryProvider := IsYouTube(value)
+	tryFormat := func(format string, allowCompression bool) (Result, error) {
+		for {
+			result, err := d.downloadYTDLPAttempt(ctx, value, format, allowCompression, options)
+			if !canRetryProvider || ctx.Err() != nil || !bgutilVersionProbeTimedOut(err) {
+				return result, err
+			}
+			// An optional provider can abort extraction during its version check.
+			// Retry this format, and any smaller ones, using formats available without a token.
+			canRetryProvider = false
+			options = append(options, "--extractor-args", "youtube:fetch_pot=never")
+			log.Printf(resources.Get("downloader.log.youtube_provider_timeout"), logutil.URL(value.String()))
+		}
+	}
 	var lastErr error
 	var sizeErr error
 	var compressionFormat string
 	for index, format := range formats {
-		result, err := d.downloadYTDLPAttempt(ctx, value, allowPlaylist, format, d.cfg.VideoCompressionEnabled && !IsYouTube(value))
+		result, err := tryFormat(format, d.cfg.VideoCompressionEnabled && !IsYouTube(value))
 		if err == nil {
 			return result, nil
 		}
@@ -44,7 +64,7 @@ func (d *Downloader) downloadYTDLPWithOptions(ctx context.Context, value *url.UR
 	if d.cfg.VideoCompressionEnabled && IsYouTube(value) && sizeErr != nil && ctx.Err() == nil &&
 		(errors.Is(lastErr, errYTDLPMediaTooLarge) || errors.Is(lastErr, errYTDLPNoMedia) ||
 			strings.Contains(strings.ToLower(lastErr.Error()), "requested format is not available")) {
-		return d.downloadYTDLPAttempt(ctx, value, allowPlaylist, compressionFormat, true)
+		return tryFormat(compressionFormat, true)
 	}
 	if sizeErr != nil && (errors.Is(lastErr, errYTDLPNoMedia) || strings.Contains(strings.ToLower(lastErr.Error()), "requested format is not available")) {
 		return Result{}, sizeErr
@@ -52,7 +72,22 @@ func (d *Downloader) downloadYTDLPWithOptions(ctx context.Context, value *url.UR
 	return Result{}, lastErr
 }
 
-func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, allowPlaylist bool, format string, allowCompression bool) (Result, error) {
+func bgutilVersionProbeTimedOut(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	index := strings.LastIndex(text, "ERROR: ")
+	if index < 0 {
+		return false
+	}
+	line, _, _ := strings.Cut(text[index+len("ERROR: "):], "\n")
+	return strings.HasPrefix(line, "Command ") &&
+		(strings.Contains(line, "/generate_once.ts'") || strings.Contains(line, "/generate_once.js'")) &&
+		strings.Contains(line, "'--version']' timed out after ")
+}
+
+func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, format string, allowCompression bool, options []string) (Result, error) {
 	isYouTube := IsYouTube(value)
 	directory, err := os.MkdirTemp("", "nyande-ytdlp-*")
 	if err != nil {
@@ -86,11 +121,7 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, a
 		arguments = append(arguments, "--plugin-dirs", pluginDir)
 	}
 	arguments = append(arguments, ytdlpMediaOptionsForFormat(value, format)...)
-	if allowPlaylist {
-		arguments = append(arguments, "--yes-playlist", "--playlist-end", strconv.Itoa(d.cfg.MaxMediaItems))
-	} else {
-		arguments = append(arguments, "--no-playlist")
-	}
+	arguments = append(arguments, options...)
 	if d.cfg.YTDownloadCookies != "" {
 		arguments = append(arguments, "--cookies", d.cfg.YTDownloadCookies)
 	}
@@ -242,18 +273,23 @@ func ytdlpMediaFormats(value *url.URL) []string {
 	return formats
 }
 
-func youtubeMediaFormat(height int) string {
-	limit := strconv.Itoa(height)
-	return "bestvideo[ext=mp4][vcodec^=av01][height<=" + limit + "]+bestaudio[ext=m4a]/" +
-		"bestvideo[ext=mp4][vcodec^=hev1][height<=" + limit + "]+bestaudio[ext=m4a]/" +
-		"bestvideo[ext=mp4][vcodec^=hvc1][height<=" + limit + "]+bestaudio[ext=m4a]/" +
-		"bestvideo[ext=mp4][vcodec^=avc1][height<=" + limit + "]+bestaudio[ext=m4a]/" +
-		"best[ext=mp4][vcodec^=avc1][height<=" + limit + "]/" +
-		"bestvideo[height<=" + limit + "]+bestaudio/best[height<=" + limit + "]"
+func youtubeMediaFormat(shortSide int) string {
+	limit := strconv.Itoa(shortSide)
+	bounded := func(video string) string {
+		// Try full-height portrait streams before their lower-resolution renditions.
+		// A known width within the limit also suffices when height is missing.
+		return "(" + video + "[width<=" + limit + "][height>?" + limit + "]/" + video + "[height<=" + limit + "])"
+	}
+	return bounded("bestvideo[ext=mp4][vcodec^=av01]") + "+bestaudio[ext=m4a]/" +
+		bounded("bestvideo[ext=mp4][vcodec^=hev1]") + "+bestaudio[ext=m4a]/" +
+		bounded("bestvideo[ext=mp4][vcodec^=hvc1]") + "+bestaudio[ext=m4a]/" +
+		bounded("bestvideo[ext=mp4][vcodec^=avc1]") + "+bestaudio[ext=m4a]/" +
+		bounded("best[ext=mp4][vcodec^=avc1]") + "/" +
+		bounded("bestvideo") + "+bestaudio/" + bounded("best")
 }
 
 func youtubeFormatFallbackError(err error) bool {
-	// Lower height selectors are subsets of the first: unavailable formats
+	// Lower resolution selectors are subsets of the first: unavailable formats
 	// cannot become available by lowering the ceiling.
 	return errors.Is(err, errYTDLPMediaTooLarge)
 }

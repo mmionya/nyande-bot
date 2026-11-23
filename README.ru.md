@@ -153,6 +153,11 @@ WHISPER_ENABLED=false
 
 ### Обновление существующего systemd-сервиса
 
+Для обновления бинарника работающей службы на Linux x86_64 выполни от root
+команду из описания [релиза на GitHub](https://github.com/mmionya/nyande-bot/releases/latest).
+Установщик скачивает готовую сборку, сверяет SHA-256 и сохраняет предыдущий
+бинарник для отката.
+
 Для `nyande-bot.service`, работающего от root с рабочим каталогом
 `/root/nyande-bot` и бинарником `/usr/local/bin/nyande-bot`, запусти от root
 `bash scripts/update-systemd.sh` на Debian/Ubuntu x86_64. Необязательный аргумент —
