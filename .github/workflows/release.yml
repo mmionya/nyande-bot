@@ -1,0 +1,48 @@
+name: Publish Linux release
+
+on:
+  push:
+    tags: ['shorts-fix-*', 'v[0-9]*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+      - name: Build and test
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/release/nyande-bot-linux-amd64" ./cmd/nyande-bot
+          umask 0027
+          go test ./...
+      - name: Publish binary and installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/release"
+          checksum=$(sha256sum nyande-bot-linux-amd64)
+          installer="$GITHUB_WORKSPACE/scripts/install-release.sh"
+          {
+            head -n 1 "$installer"
+            printf 'set -- %q %q\n' "$GITHUB_REF_NAME" "${checksum%% *}"
+            tail -n +2 "$installer"
+          } > install.sh
+          bash -n install.sh
+          sha256sum nyande-bot-linux-amd64 install.sh > SHA256SUMS
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/install.sh"
+          printf '%s\n' \
+            'Обновление работающего nyande-bot.service на Linux x86_64. Выполни от root.' \
+            '' '```bash' "curl -fL --retry 3 $url -o /root/nyande-bot-install.sh && bash /root/nyande-bot-install.sh" '```' \
+            '' 'Установщик проверяет SHA-256 и восстанавливает предыдущий бинарник при ошибке запуска.' > notes.md
+          gh release create "$GITHUB_REF_NAME" nyande-bot-linux-amd64 install.sh SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md
