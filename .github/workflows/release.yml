@@ -3,6 +3,12 @@ name: Publish Linux release
 on:
   push:
     tags: ['shorts-fix-*', 'v[0-9]*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,9 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: '0'
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - name: Check release tag
+        run: '[[ "$RELEASE_TAG" =~ ^(shorts-fix-|v)[0-9][A-Za-z0-9._-]*$ ]]'
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -34,15 +44,15 @@ jobs:
           installer="$GITHUB_WORKSPACE/scripts/install-release.sh"
           {
             head -n 1 "$installer"
-            printf 'set -- %q %q\n' "$GITHUB_REF_NAME" "${checksum%% *}"
+            printf 'set -- %q %q\n' "$RELEASE_TAG" "${checksum%% *}"
             tail -n +2 "$installer"
           } > install.sh
           bash -n install.sh
           sha256sum nyande-bot-linux-amd64 install.sh > SHA256SUMS
-          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/install.sh"
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/install.sh"
           printf '%s\n' \
             'Обновление работающего nyande-bot.service на Linux x86_64. Выполни от root.' \
             '' '```bash' "curl -fL --retry 3 $url -o /root/nyande-bot-install.sh && bash /root/nyande-bot-install.sh" '```' \
             '' 'Установщик проверяет SHA-256 и восстанавливает предыдущий бинарник при ошибке запуска.' > notes.md
-          gh release create "$GITHUB_REF_NAME" nyande-bot-linux-amd64 install.sh SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$RELEASE_TAG" nyande-bot-linux-amd64 install.sh SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$RELEASE_TAG" --notes-file notes.md
