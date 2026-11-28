@@ -35,7 +35,7 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 	started := time.Now()
 	log.Printf(resources.Get("telegram.log.download_started"), message.Chat.ID, userID(message), message.MessageID, logutil.URL(mediaURL))
 	b.state.MediaTotal.Add(1)
-	smileys := [...]string{":3", "<3", ">:3", ":3c", ";3", "=3", "^w^", "owo", "uwu"}
+	smileys := [...]string{":3", "<3", ">:3", ":3c", ";3", "^w^", "owo", "uwu"}
 	statusFields := map[string]any{"smiley": smileys[rand.IntN(len(smileys))]}
 	status, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Format("downloader.status.downloading", statusFields), message.MessageID, nil)
 	if err != nil {
