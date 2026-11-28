@@ -9,7 +9,7 @@ import (
 	"github.com/mmionya/nyande-bot/resources"
 )
 
-// Standard Telegram reactions also usable as Unicode reactions in Discord.
+// Standard Telegram reactions supported by the reaction tool.
 // Keep fully qualified emoji here; the Telegram adapter removes variation selectors.
 var reactionEmojis = strings.Fields("👍 👎 ❤️ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊️ 🤡 🥱 🥴 😍 🐳 ❤️‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍️ 🤗 🫡 🎅 🎄 ☃️ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷‍♂️ 🤷 🤷‍♀️ 😡")
 

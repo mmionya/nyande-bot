@@ -1,0 +1,54 @@
+name: Test Telegram bot
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.x'
+      - name: Install Linux media test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg poppler-utils
+          python3 -m venv "$RUNNER_TEMP/test-python"
+          "$RUNNER_TEMP/test-python/bin/pip" install yt-dlp
+          echo "$RUNNER_TEMP/test-python/bin" >> "$GITHUB_PATH"
+      - name: Vet and build
+        run: |
+          go vet ./...
+          go build ./cmd/nyande-bot
+      - name: Test with race detector on Linux
+        if: runner.os == 'Linux'
+        run: |
+          umask 0027
+          go test -race ./...
+          "$RUNNER_TEMP/test-python/bin/python" -B internal/downloader/instagram_photos_test.py
+          bash scripts/update-systemd-test.sh
+      - name: Test on Windows
+        if: runner.os == 'Windows'
+        env:
+          CGO_ENABLED: '0'
+        run: go test ./...

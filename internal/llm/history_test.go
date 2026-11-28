@@ -6,14 +6,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 )
 
 func TestHistorySurvivesClientRestartAndReset(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "history.json")
+	path := filepath.Join(privateStorageDir(t), "history.json")
 	cfg := config.Config{LLMHistoryFile: path, LLMMaxHistory: 4}
 	client := New(cfg)
 	client.saveHistory(42, "first user", "first assistant")
@@ -35,7 +37,7 @@ func TestHistorySurvivesClientRestartAndReset(t *testing.T) {
 }
 
 func TestHistoryLoadAppliesCurrentLimit(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "history.json")
+	path := filepath.Join(privateStorageDir(t), "history.json")
 	writer := New(config.Config{LLMHistoryFile: path, LLMMaxHistory: 10})
 	writer.saveHistory(7, "one", "two")
 	writer.saveHistory(7, "three", "four")
@@ -47,7 +49,7 @@ func TestHistoryLoadAppliesCurrentLimit(t *testing.T) {
 }
 
 func TestEncryptedHistoryMigratesAndSurvivesRestartAndReset(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state", "history.json")
+	path := filepath.Join(privateStorageDir(t), "state", "history.json")
 	cfg := config.Config{LLMHistoryFile: path, LLMMaxHistory: 4}
 	New(cfg).saveHistory(42, "private user message", "private assistant reply")
 	cfg.StorageEncryptionKey = bytes.Repeat([]byte{17}, 32)
@@ -59,12 +61,16 @@ func TestEncryptedHistoryMigratesAndSurvivesRestartAndReset(t *testing.T) {
 	if err != nil || !bytes.HasPrefix(data, []byte(encryptedHistoryPrefix)) || bytes.Contains(data, []byte("private")) {
 		t.Fatalf("history was not encrypted: err=%v", err)
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("history file must have mode 0600: %v", err)
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	info, err = os.Stat(filepath.Dir(path))
-	if err != nil || info.Mode().Perm() != 0o700 {
+	if err := privatefile.Check(file); err != nil {
+		t.Fatalf("history file must be private: %v", err)
+	}
+	_ = file.Close()
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
 		t.Fatalf("new history directory must have mode 0700: %v", err)
 	}
 	files, err := os.ReadDir(filepath.Dir(path))
@@ -93,7 +99,7 @@ func TestEncryptedHistoryMigratesAndSurvivesRestartAndReset(t *testing.T) {
 
 func TestHistoryLoadFailureCannotOverwriteStoredData(t *testing.T) {
 	key := bytes.Repeat([]byte{17}, 32)
-	source := filepath.Join(t.TempDir(), "history.json")
+	source := filepath.Join(privateStorageDir(t), "history.json")
 	New(config.Config{LLMHistoryFile: source, StorageEncryptionKey: key}).saveHistory(42, "original user text", "original answer")
 	encrypted, err := os.ReadFile(source)
 	if err != nil {
@@ -110,7 +116,7 @@ func TestHistoryLoadFailureCannotOverwriteStoredData(t *testing.T) {
 		{name: "invalid key", key: []byte("short"), data: encrypted},
 		{name: "tampered ciphertext", key: key, data: tampered},
 		{name: "truncated ciphertext", key: key, data: []byte(encryptedHistoryPrefix + "short")},
-		{name: "swapped history", filename: "history.json.discord", key: key, data: encrypted},
+		{name: "swapped history", filename: "another-history.json", key: key, data: encrypted},
 		{name: "corrupt legacy JSON", key: key, data: []byte(`{"version":1,"chats":`)},
 		{name: "unsupported legacy version", key: key, data: []byte(`{"version":99,"chats":{}}`)},
 	} {
@@ -119,7 +125,7 @@ func TestHistoryLoadFailureCannotOverwriteStoredData(t *testing.T) {
 			if filename == "" {
 				filename = "history.json"
 			}
-			path := filepath.Join(t.TempDir(), filename)
+			path := filepath.Join(privateStorageDir(t), filename)
 			if err := os.WriteFile(path, test.data, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -152,4 +158,13 @@ func TestHistoryLoadFailureCannotOverwriteStoredData(t *testing.T) {
 			}
 		})
 	}
+}
+
+func privateStorageDir(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "private")
+	if err := privatefile.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

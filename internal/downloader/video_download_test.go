@@ -17,6 +17,7 @@ import (
 
 func downloadCompressionTools(t *testing.T) (string, string) {
 	t.Helper()
+	requirePOSIXFixture(t)
 	directory := t.TempDir()
 	probe, encoder := filepath.Join(directory, "ffprobe"), filepath.Join(directory, "ffmpeg")
 	for name, contents := range map[string]string{
@@ -45,9 +46,14 @@ func TestHTTPVideoCompressionAndSourceBounds(t *testing.T) {
 		{name: "disabled", kind: "video", size: 128 * 1024, disabled: true, wantError: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			probe, encoder := downloadCompressionTools(t)
+			probe, encoder := filepath.Join(t.TempDir(), "unused-probe"), filepath.Join(t.TempDir(), "unused-encoder")
+			if test.compressed {
+				probe, encoder = downloadCompressionTools(t)
+			}
 			temporary := t.TempDir()
 			t.Setenv("TMPDIR", temporary)
+			t.Setenv("TMP", temporary)
+			t.Setenv("TEMP", temporary)
 			d := New(config.Config{MaxFileSize: 64 * 1024, VideoMaxSourceSize: 256 * 1024, VideoCompressionEnabled: !test.disabled,
 				FFprobePath: probe, FFmpegPath: encoder, RetryAttempts: 3, MaxMediaItems: 1})
 			body := strings.Repeat("x", test.size)

@@ -13,14 +13,19 @@ import (
 	"time"
 )
 
-func fakeYTDLPProcess(t *testing.T, script string) string {
+func requirePOSIXFixture(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("fake extractor uses a POSIX shell")
+		t.Skip("subprocess fixture requires POSIX shell execution")
 	}
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("POSIX shell unavailable")
 	}
+}
+
+func fakeYTDLPProcess(t *testing.T, script string) string {
+	t.Helper()
+	requirePOSIXFixture(t)
 	path := filepath.Join(t.TempDir(), "yt-dlp")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nset -eu\n"+script), 0700); err != nil {
 		t.Fatal(err)

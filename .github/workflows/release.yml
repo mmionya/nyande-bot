@@ -14,7 +14,14 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+    with:
+      ref: refs/tags/${{ inputs.tag || github.ref_name }}
   release:
+    needs: test
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: '0'
@@ -29,12 +36,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.x'
-      - name: Build and test
+      - name: Build
         run: |
           mkdir -p "$RUNNER_TEMP/release"
           go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/release/nyande-bot-linux-amd64" ./cmd/nyande-bot
-          umask 0027
-          go test ./...
       - name: Publish binary and installer
         env:
           GH_TOKEN: ${{ github.token }}

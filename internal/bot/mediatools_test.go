@@ -66,7 +66,7 @@ func TestInspectPhoto(t *testing.T) {
 		Data: buf.Bytes(),
 	}
 
-	spec, err := inspectMedia(context.Background(), att)
+	spec, err := inspectMedia(context.Background(), att, "")
 	if err != nil {
 		t.Fatal(err)
 	}

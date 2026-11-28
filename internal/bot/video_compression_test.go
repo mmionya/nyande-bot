@@ -30,24 +30,15 @@ func TestTelegramOversizedVideoCompressionDelivery(t *testing.T) {
 		{name: "encoder failure", duration: "1", failureKey: "downloader.error.video_compression_generic", encoderFails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			directory := t.TempDir()
-			probe, encoder := filepath.Join(directory, "ffprobe"), filepath.Join(directory, "ffmpeg")
 			audioStream := `,{"index":1,"codec_type":"audio","codec_name":"aac"}`
 			uploadMethod, uploadField := "sendVideo", "video"
 			if test.silent {
 				audioStream = ""
 				uploadMethod, uploadField = "sendAnimation", "animation"
 			}
-			probeScript := fmt.Sprintf("#!/bin/sh\nprintf '%%s' '{\"format\":{\"duration\":\"%s\",\"format_name\":\"mp4\"},\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"codec_name\":\"h264\",\"pix_fmt\":\"yuv420p\",\"width\":320,\"height\":240}%s]}'\n", test.duration, audioStream)
-			encoderScript := "#!/bin/sh\nprintf called >> \"$0.calls\"\nfor output do :; done\nprintf compressed-video > \"$output\"\n"
-			if test.encoderFails {
-				encoderScript = "#!/bin/sh\nprintf called >> \"$0.calls\"\nprintf 'private-token connection timeout at /private/video.mp4' >&2\nexit 1\n"
-			}
-			for filename, contents := range map[string]string{probe: probeScript, encoder: encoderScript} {
-				if err := os.WriteFile(filename, []byte(contents), 0700); err != nil {
-					t.Fatal(err)
-				}
-			}
+			probeJSON := fmt.Sprintf(`{"format":{"duration":"%s","format_name":"mp4"},"streams":[{"index":0,"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":320,"height":240}%s]}`, test.duration, audioStream)
+			probe := fakeMediaProcess(t, mediaProcessFixture{Kind: "probe", Text: probeJSON})
+			encoder := fakeMediaProcess(t, mediaProcessFixture{Kind: "encoder", Text: "compressed-video", Fail: test.encoderFails})
 			b := concurrentTestBot()
 			b.cfg.MaxFileSize = 64 * 1024
 			b.cfg.VideoMaxSourceSize = 256 * 1024
@@ -119,12 +110,19 @@ func TestTelegramOversizedVideoCompressionDelivery(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			sent, err := b.downloadAndSendMedia(ctx, message, mediaURL)
-			wantEvents := []string{resources.Get("downloader.status.downloading"), "download", "Видео большое, сжимаю…"}
+			if len(events) == 0 {
+				t.Fatal("missing download status")
+			}
+			smiley, ok := strings.CutPrefix(events[0], strings.TrimSuffix(resources.Get("downloader.status.downloading"), "{smiley}"))
+			if !ok || smiley == "" || smiley == "{smiley}" {
+				t.Fatalf("unexpected download status: %q", events[0])
+			}
+			wantEvents := []string{events[0], "download", "Видео большое, сжимаю…"}
 			if test.failureKey == "" {
 				if err != nil || len(sent) != 1 || sent[0].MessageID != 200 {
 					t.Fatalf("delivery = %v, err = %v", sent, err)
 				}
-				wantEvents = append(wantEvents, resources.Get("downloader.status.sending"), "upload", "delete")
+				wantEvents = append(wantEvents, resources.Format("downloader.status.sending", map[string]any{"smiley": smiley}), "upload", "delete")
 			} else {
 				if !errors.Is(err, downloader.ErrVideoCompression) || len(sent) != 0 {
 					t.Fatalf("delivery after compression failure = %v, err = %v", sent, err)

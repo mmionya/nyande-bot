@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -16,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/mmionya/nyande-bot/internal/publichttp"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -49,21 +48,11 @@ var defaultClient = &http.Client{
 }
 
 func publicTransport() *http.Transport {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	// Control checks the resolved IP immediately before connecting, including
-	// redirects and DNS changes. An environment proxy must not bypass this check.
-	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second, Control: checkPublicAddress}
-	transport.DialContext = dialer.DialContext
-	return transport
+	return publichttp.NewTransport()
 }
 
-var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
-
-func checkPublicAddress(_ string, address string, _ syscall.RawConn) error {
-	endpoint, err := netip.ParseAddrPort(address)
-	ip := endpoint.Addr().Unmap()
-	if err != nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || sharedAddressSpace.Contains(ip) {
+func checkPublicAddress(network string, address string, connection syscall.RawConn) error {
+	if err := publichttp.CheckPublicAddress(network, address, connection); err != nil {
 		return errors.New(resources.Get("webpage.error.webpage_address_must_be_public"))
 	}
 	return nil

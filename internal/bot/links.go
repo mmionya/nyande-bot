@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,13 +23,20 @@ import (
 var urlPattern = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"']+`)
 
 type allowlist struct {
-	mu      sync.RWMutex
-	path    string
-	domains map[string]struct{}
+	mu          sync.RWMutex
+	path        string
+	legacy      []string
+	chatDomains map[int64]map[string]struct{}
+}
+
+type storedAllowlist struct {
+	// Legacy global entries have unknown authorship, so preserve but never apply them.
+	Domains     []string           `json:"domains,omitempty"`
+	ChatDomains map[int64][]string `json:"chat_domains,omitempty"`
 }
 
 func loadAllowlist(path string) (*allowlist, error) {
-	result := &allowlist{path: path, domains: make(map[string]struct{})}
+	result := &allowlist{path: path, chatDomains: make(map[int64]map[string]struct{})}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -36,28 +44,36 @@ func loadAllowlist(path string) (*allowlist, error) {
 		}
 		return nil, err
 	}
-	var stored struct {
-		Domains []string `json:"domains"`
-	}
+	var stored storedAllowlist
 	if err := json.Unmarshal(data, &stored); err != nil {
 		return nil, err
 	}
-	for _, domain := range stored.Domains {
-		if normalized := normalizeDomain(domain); normalized != "" {
-			result.domains[normalized] = struct{}{}
+	result.legacy = stored.Domains
+	if len(stored.Domains) > 0 {
+		log.Printf("[links] %d legacy global allowlist entries are inactive; use /allowlink in each intended chat to authorize them again", len(stored.Domains))
+	}
+	for chatID, domains := range stored.ChatDomains {
+		result.chatDomains[chatID] = make(map[string]struct{})
+		for _, domain := range domains {
+			if normalized := normalizeDomain(domain); normalized != "" {
+				result.chatDomains[chatID][normalized] = struct{}{}
+			}
 		}
 	}
 	return result, nil
 }
 
-func (a *allowlist) Allows(raw string) bool {
+func (a *allowlist) Allows(chatID int64, raw string) bool {
+	if a == nil {
+		return false
+	}
 	domain := normalizeDomain(raw)
 	if domain == "" {
 		return false
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	for allowed := range a.domains {
+	for allowed := range a.chatDomains[chatID] {
 		if domain == allowed || strings.HasSuffix(domain, "."+allowed) {
 			return true
 		}
@@ -65,35 +81,41 @@ func (a *allowlist) Allows(raw string) bool {
 	return false
 }
 
-func (a *allowlist) Add(raw string) (string, bool, error) {
+func (a *allowlist) Add(chatID int64, raw string) (string, bool, error) {
 	domain := normalizeDomain(raw)
 	if domain == "" {
 		return "", false, errors.New(resources.Get("telegram.error.invalid_domain"))
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if _, exists := a.domains[domain]; exists {
+	if _, exists := a.chatDomains[chatID][domain]; exists {
 		return domain, false, nil
 	}
-	a.domains[domain] = struct{}{}
-	values := make([]string, 0, len(a.domains))
-	for value := range a.domains {
-		values = append(values, value)
+	stored := storedAllowlist{Domains: a.legacy, ChatDomains: make(map[int64][]string, len(a.chatDomains)+1)}
+	for id, domains := range a.chatDomains {
+		for value := range domains {
+			stored.ChatDomains[id] = append(stored.ChatDomains[id], value)
+		}
 	}
-	sort.Strings(values)
-	data, _ := json.MarshalIndent(struct {
-		Domains []string `json:"domains"`
-	}{values}, "", "  ")
-	if err := os.MkdirAll(filepath.Dir(a.path), 0o755); err != nil {
+	stored.ChatDomains[chatID] = append(stored.ChatDomains[chatID], domain)
+	for _, domains := range stored.ChatDomains {
+		sort.Strings(domains)
+	}
+	data, err := json.MarshalIndent(stored, "", "  ")
+	if err != nil {
 		return "", false, err
 	}
-	temporary := a.path + ".tmp"
-	if err := os.WriteFile(temporary, data, 0o600); err != nil {
+	// Persist before publishing, so failed writes cannot grant permission in memory.
+	if err := writeLLMChatSettings(a.path, append(data, '\n')); err != nil {
 		return "", false, err
 	}
-	if err := os.Rename(temporary, a.path); err != nil {
-		return "", false, err
+	if a.chatDomains == nil {
+		a.chatDomains = make(map[int64]map[string]struct{})
 	}
+	if a.chatDomains[chatID] == nil {
+		a.chatDomains[chatID] = make(map[string]struct{})
+	}
+	a.chatDomains[chatID][domain] = struct{}{}
 	return domain, true, nil
 }
 
@@ -193,6 +215,46 @@ func (b *Bot) isAdmin(ctx context.Context, message *telegram.Message) (bool, err
 
 func (b *Bot) linkDeletionEnabled(chatID int64) bool {
 	return b.linkConfig != nil && b.linkConfig.Enabled(chatID)
+}
+
+// Report deletion so command dispatch cannot continue after its message was removed.
+func (b *Bot) moderateCommandLinks(ctx context.Context, message *telegram.Message) (bool, error) {
+	return b.moderateLinks(ctx, message, extractURLs(message))
+}
+
+func (b *Bot) moderateLinks(ctx context.Context, message *telegram.Message, urls []string) (bool, error) {
+	if message.IsPrivate() || !b.linkDeletionEnabled(message.Chat.ID) {
+		return false, nil
+	}
+	if b.silentModeration(message.Chat.ID) {
+		if message.IsAutomaticForward || (message.SenderChat == nil && message.From != nil && b.linkConfig.UserPermitted(message.Chat.ID, message.From.ID)) {
+			return false, nil
+		}
+	}
+	forbidden := false
+	for _, value := range urls {
+		if b.silentModeration(message.Chat.ID) || (!downloader.AllowedHost(value) && !b.allowlist.Allows(message.Chat.ID, value)) {
+			forbidden = true
+			break
+		}
+	}
+	if !forbidden {
+		return false, nil
+	}
+	admin, err := b.isAdmin(ctx, message)
+	if err != nil {
+		return false, fmt.Errorf(resources.Get("telegram.error.link_author_role"), err)
+	}
+	if admin {
+		return false, nil
+	}
+	if err := b.telegram.DeleteMessage(ctx, message.Chat.ID, message.MessageID); err != nil {
+		return true, err
+	}
+	if !b.silentModeration(message.Chat.ID) {
+		_, _ = b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.unsupported"), 0, nil)
+	}
+	return true, nil
 }
 
 func (b *Bot) configureLinkDeletion(ctx context.Context, message *telegram.Message, argument string) error {

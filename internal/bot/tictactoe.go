@@ -17,11 +17,17 @@ const (
 )
 
 type ticTacToeGame struct {
-	PlayerX int64
-	PlayerO int64
-	Board   [9]string
-	Current string
-	Over    bool
+	MessageID int
+	PlayerX   int64
+	PlayerO   int64
+	Board     [9]string
+	Current   string
+	Over      bool
+}
+
+type gameChallenge struct {
+	MessageID int
+	Players   [2]int64
 }
 
 func newTicTacToe(playerX, playerO int64) *ticTacToeGame {
@@ -112,22 +118,31 @@ func (b *Bot) startTicTacToe(ctx context.Context, message *telegram.Message) err
 		return nil
 	}
 	if opponent := challengedUser(message); opponent != nil && opponent.ID != message.From.ID && !opponent.IsBot {
-		b.tttMu.Lock()
-		b.tttPending[message.Chat.ID] = [2]int64{message.From.ID, opponent.ID}
-		b.tttMu.Unlock()
 		text := resources.Format("ttt.challenge", map[string]any{"challenger": message.From.DisplayName(), "opponent": opponent.DisplayName()})
 		markup := map[string]any{"inline_keyboard": [][]map[string]any{{{
 			"text": resources.Get("game.accept"), "callback_data": fmt.Sprintf("ttt_accept:%d", opponent.ID),
 		}}}}
-		_, err := b.telegram.SendMessage(ctx, message.Chat.ID, text, message.MessageID, markup)
-		return err
+		sent, err := b.telegram.SendMessage(ctx, message.Chat.ID, text, message.MessageID, markup)
+		if err != nil {
+			return err
+		}
+		b.tttMu.Lock()
+		b.tttPending[message.Chat.ID] = gameChallenge{MessageID: sent.MessageID, Players: [2]int64{message.From.ID, opponent.ID}}
+		delete(b.tttGames, message.Chat.ID)
+		b.tttMu.Unlock()
+		return nil
 	}
 	game := newTicTacToe(message.From.ID, 0)
+	sent, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("ttt.started_bot"), message.MessageID, tttKeyboard(game))
+	if err != nil {
+		return err
+	}
+	game.MessageID = sent.MessageID
 	b.tttMu.Lock()
 	b.tttGames[message.Chat.ID] = game
+	delete(b.tttPending, message.Chat.ID)
 	b.tttMu.Unlock()
-	_, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("ttt.started_bot"), message.MessageID, tttKeyboard(game))
-	return err
+	return nil
 }
 
 func (b *Bot) handleTicTacToeCallback(ctx context.Context, callback *telegram.CallbackQuery) error {
@@ -142,15 +157,15 @@ func (b *Bot) handleTicTacToeCallback(ctx context.Context, callback *telegram.Ca
 		}
 		b.tttMu.Lock()
 		pending, exists := b.tttPending[chatID]
-		if exists {
-			delete(b.tttPending, chatID)
-			b.tttGames[chatID] = newTicTacToe(pending[0], pending[1])
-		}
-		game := b.tttGames[chatID]
-		b.tttMu.Unlock()
-		if !exists || game == nil {
+		if !exists || pending.MessageID != callback.Message.MessageID || pending.Players[1] != callback.From.ID {
+			b.tttMu.Unlock()
 			return b.telegram.AnswerCallback(ctx, callback.ID, resources.Get("game.challenge.expired"), "", true)
 		}
+		delete(b.tttPending, chatID)
+		game := newTicTacToe(pending.Players[0], pending.Players[1])
+		game.MessageID = pending.MessageID
+		b.tttGames[chatID] = game
+		b.tttMu.Unlock()
 		if err := b.telegram.EditMessageText(ctx, chatID, callback.Message.MessageID, resources.Get("ttt.started_players"), tttKeyboard(game)); err != nil {
 			return err
 		}
@@ -165,7 +180,7 @@ func (b *Bot) handleTicTacToeCallback(ctx context.Context, callback *telegram.Ca
 	}
 	b.tttMu.Lock()
 	game := b.tttGames[chatID]
-	if game == nil {
+	if game == nil || game.MessageID != callback.Message.MessageID {
 		b.tttMu.Unlock()
 		return b.telegram.AnswerCallback(ctx, callback.ID, resources.Get("ttt.no_game"), "", true)
 	}

@@ -226,7 +226,7 @@ func TestTwitterIntegrationTextOnlyPreservesFullPostWithoutLLM(t *testing.T) {
 			var parts []string
 			deleted := false
 			for _, request := range network.snapshot() {
-				if request.Method == "sendMessage" && request.Text != resources.Get("downloader.status.downloading") {
+				if request.Method == "sendMessage" && !strings.HasPrefix(request.Text, strings.TrimSuffix(resources.Get("downloader.status.downloading"), "{smiley}")) {
 					parts = append(parts, request.Text)
 					if request.ParseMode != "" || len(request.Entities) != 0 || len(utf16.Encode([]rune(request.Text))) > telegramMessageLimit {
 						t.Fatalf("source formatting or chunk limit changed: %+v", request)
@@ -268,7 +268,7 @@ func TestTwitterIntegrationMediaHasNoTranslationButton(t *testing.T) {
 		case "editMessageReplyMarkup":
 			buttons++
 		case "editMessageText":
-			if request.Text != resources.Get("downloader.status.sending") {
+			if !strings.HasPrefix(request.Text, strings.TrimSuffix(resources.Get("downloader.status.sending"), "{smiley}")) {
 				t.Fatalf("successful upload reported as a failure: %q", request.Text)
 			}
 		case "deleteMessage":
@@ -292,7 +292,7 @@ func TestTwitterIntegrationExplicitTranslationSkipsMediaDownload(t *testing.T) {
 			for _, request := range network.snapshot() {
 				translated = translated || strings.Contains(request.Text, "Переведённый *текст* с **буквальными** звёздочками.")
 				cleanup = cleanup || request.Method == "deleteMessage"
-				if request.Method == "sendVideo" || request.Method == "sendPhoto" || request.Method == "sendDocument" || request.Text == resources.Get("downloader.status.downloading") {
+				if request.Method == "sendVideo" || request.Method == "sendPhoto" || request.Method == "sendDocument" || strings.HasPrefix(request.Text, strings.TrimSuffix(resources.Get("downloader.status.downloading"), "{smiley}")) {
 					t.Fatal("translation used the automatic media path")
 				}
 			}

@@ -4,13 +4,19 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 )
 
 func TestAuthenticatedStorageAndKeyPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "storage.key")
 	key := bytes.Repeat([]byte{42}, 32)
 	if err := os.WriteFile(path, key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := privatefile.Protect(path); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := ReadKeyFile(path)
@@ -37,11 +43,13 @@ func TestAuthenticatedStorageAndKeyPermissions(t *testing.T) {
 	if _, err := c.Open(sealed, aad); err == nil {
 		t.Fatal("accepted tampered ciphertext")
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ReadKeyFile(path); err == nil {
-		t.Fatal("accepted world-readable key")
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadKeyFile(path); err == nil {
+			t.Fatal("accepted world-readable key")
+		}
 	}
 	if _, err := New([]byte("short")); err == nil {
 		t.Fatal("accepted invalid key length")

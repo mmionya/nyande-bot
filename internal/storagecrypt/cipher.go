@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -40,8 +41,11 @@ func ReadKeyFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() != 32 || info.Mode().Perm()&0o077 != 0 {
+	if !info.Mode().IsRegular() || info.Size() != 32 {
 		return nil, errors.New(resources.Get("storagecrypt.error.storage_key_must_be_a_regular_32_byte_file"))
+	}
+	if err := privatefile.Check(file); err != nil {
+		return nil, errors.Join(errors.New(resources.Get("storagecrypt.error.storage_key_must_be_a_regular_32_byte_file")), err)
 	}
 	key := make([]byte, 32)
 	if _, err := file.ReadAt(key, 0); err != nil {

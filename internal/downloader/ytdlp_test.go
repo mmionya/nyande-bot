@@ -53,6 +53,7 @@ func TestYouTubeStopsUselessQualityRetries(t *testing.T) {
 // repeats, so an unexpected retry can't turn a terminal failure into success.
 func scriptedYTDLP(t *testing.T, replies ...string) string {
 	t.Helper()
+	requirePOSIXFixture(t)
 	script := filepath.Join(t.TempDir(), "yt-dlp")
 	contents := `#!/bin/sh
 set -eu

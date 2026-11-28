@@ -13,7 +13,7 @@ func TestChatLogRemovedCaptionAndRetention(t *testing.T) {
 	for _, key := range [][]byte{nil, bytes.Repeat([]byte{0x42}, 32)} {
 		t.Run(fmt.Sprintf("encrypted=%t", key != nil), func(t *testing.T) {
 			ctx := context.Background()
-			store, err := Open(filepath.Join(t.TempDir(), "archive.db"), 3, key)
+			store, err := Open(filepath.Join(privateStorageDir(t), "archive.db"), 3, key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +60,7 @@ func TestChatLogRemovedCaptionAndRetention(t *testing.T) {
 
 func TestChatLogStoreSaveAndSearch(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "test-chatlog.db")
+	path := filepath.Join(privateStorageDir(t), "test-chatlog.db")
 	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -138,7 +138,7 @@ func TestChatLogStoreSaveAndSearch(t *testing.T) {
 
 func TestChatLogStoreRecent(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "test-recent.db")
+	path := filepath.Join(privateStorageDir(t), "test-recent.db")
 	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -177,7 +177,7 @@ func TestChatLogStoreRecent(t *testing.T) {
 
 func TestChatLogStoreUpdateExistingMessage(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "test-update.db")
+	path := filepath.Join(privateStorageDir(t), "test-update.db")
 	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)

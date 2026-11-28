@@ -9,12 +9,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 )
 
 func TestEncryptedArchivePersistenceAndAuthentication(t *testing.T) {
 	ctx := context.Background()
 	key := bytes.Repeat([]byte{0x71}, 32)
-	path := filepath.Join(t.TempDir(), "archive.db")
+	path := filepath.Join(privateStorageDir(t), "archive.db")
 	store, err := Open(path, 100, key)
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +114,7 @@ func TestEncryptedArchivePersistenceAndAuthentication(t *testing.T) {
 }
 
 func TestEmptyEncryptedArchiveRejectsWrongKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "empty.db")
+	path := filepath.Join(privateStorageDir(t), "empty.db")
 	store, err := Open(path, 100, bytes.Repeat([]byte{1}, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +137,7 @@ func TestEncryptExistingChatArchive(t *testing.T) {
 			name = "legacy_fts"
 		}
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "migration.db")
+			path := filepath.Join(privateStorageDir(t), "migration.db")
 			msg := Message{ChatID: -10, MessageID: 7, UserID: 98765, Username: "legacyusernamecanary", DisplayName: "LegacyAuthorCanary", Text: "archivelegacycanary Edited", Date: time.Unix(1700000000, 0).UTC()}
 			if legacyFTS {
 				db, err := sql.Open("sqlite", path)
@@ -223,13 +225,15 @@ func assertArchivePrivate(t *testing.T, path string, secrets ...string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		stat, err := os.Stat(path + suffix)
+		file, err := os.Open(path + suffix)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stat.Mode().Perm() != 0o600 {
-			t.Fatalf("archive file permissions: %s %o", suffix, stat.Mode().Perm())
+		if err := privatefile.Check(file); err != nil {
+			_ = file.Close()
+			t.Fatalf("archive file permissions: %s: %v", suffix, err)
 		}
+		_ = file.Close()
 		for _, secret := range secrets {
 			if bytes.Contains(data, []byte(secret)) {
 				t.Fatalf("plaintext remained in archive%s", suffix)
@@ -239,7 +243,7 @@ func assertArchivePrivate(t *testing.T, path string, secrets ...string) {
 }
 
 func TestChatArchiveMigrationRollbackAndCleanupResume(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "atomic.db")
+	path := filepath.Join(privateStorageDir(t), "atomic.db")
 	store, err := Open(path, 100, nil)
 	if err != nil {
 		t.Fatal(err)

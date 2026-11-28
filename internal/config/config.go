@@ -17,67 +17,58 @@ import (
 )
 
 type Config struct {
-	BotToken               string
-	BotOwnerIDs            []string
-	DiscordToken           string
-	DiscordOwnerIDs        []string
-	BannedUsersFile        string
-	DiscordPrefix          string
-	DiscordLLMSettingsFile string
-	LLMSettingsFile        string
-	MusicBackend           string
-	MusicMaxPlayers        int
-	FFmpegPath             string
-	FFprobePath            string
-	LavalinkAddress        string
-	LavalinkPassword       string
-	LavalinkSecure         bool
-	APIFYToken             string
-	APIFYInstagramActor    string
-	DonateURL              string
-	AllowedLinksFile       string
-	LinkModerationFile     string
-	YTDownloadPath         string
-	YTDownloadCookies      string
-	YTDownloadBrowser      string
-	RedditUserAgent        string
-	MaxMediaItems          int
-	MaxFileSize            int64
-	RetryAttempts          int
-	RetryDelay             time.Duration
-	AdminCacheTTL          time.Duration
-	LLMEnabled             bool
-	LLMBaseURL             string
-	LLMAPIKey              string
-	LLMModel               string
-	LLMSystemPrompt        string
-	LLMCooldown            time.Duration
-	LLMTimeout             time.Duration
-	LLMMaxTokens           int
-	LLMTemperature         float64
-	LLMMaxHistory          int
-	LLMHistoryFile         string
-	LLMTriggerWords        []string
-	LLMMemoryEnabled       bool
-	LLMMemoryFile          string
-	LLMMemoryMax           int
-	LLMMemoryRecall        int
-	LLMWebSearch           bool
-	LLMWebSearchResults    int
-	LLMTimezone            string
-	LLMVision              bool
-	LLMVideoFrames         int
-	StickerPythonPath      string
-	WhisperEnabled         bool
-	WhisperPath            string
-	WhisperModel           string
-	WhisperLanguage        string
-	ChatLogEnabled         bool
-	ChatLogFile            string
-	ChatLogMaxPerChat      int
-	ReminderDBFile         string
-	QuoteDBFile            string
-	StorageEncryptionKey   []byte
+	BotToken             string
+	BotOwnerIDs          []string
+	BannedUsersFile      string
+	LLMSettingsFile      string
+	FFmpegPath           string
+	FFprobePath          string
+	APIFYToken           string
+	APIFYInstagramActor  string
+	DonateURL            string
+	AllowedLinksFile     string
+	LinkModerationFile   string
+	YTDownloadPath       string
+	YTDownloadCookies    string
+	YTDownloadBrowser    string
+	RedditUserAgent      string
+	MaxMediaItems        int
+	MaxFileSize          int64
+	RetryAttempts        int
+	RetryDelay           time.Duration
+	AdminCacheTTL        time.Duration
+	LLMEnabled           bool
+	LLMBaseURL           string
+	LLMAPIKey            string
+	LLMModel             string
+	LLMSystemPrompt      string
+	LLMCooldown          time.Duration
+	LLMTimeout           time.Duration
+	LLMMaxTokens         int
+	LLMTemperature       float64
+	LLMMaxHistory        int
+	LLMHistoryFile       string
+	LLMTriggerWords      []string
+	LLMMemoryEnabled     bool
+	LLMMemoryFile        string
+	LLMMemoryMax         int
+	LLMMemoryRecall      int
+	LLMWebSearch         bool
+	LLMWebSearchResults  int
+	LLMTimezone          string
+	LLMVision            bool
+	LLMVideoFrames       int
+	StickerPythonPath    string
+	WhisperEnabled       bool
+	WhisperPath          string
+	WhisperModel         string
+	WhisperLanguage      string
+	ChatLogEnabled       bool
+	ChatLogFile          string
+	ChatLogMaxPerChat    int
+	ReminderDBFile       string
+	QuoteDBFile          string
+	StorageEncryptionKey []byte
 
 	VideoCompressionEnabled bool
 	VideoMaxSourceSize      int64
@@ -90,83 +81,72 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf(resources.Get("config.error.load_env"), err)
 	}
 	cfg := Config{
-		BotToken:               firstEnv("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
-		BotOwnerIDs:            envList("BOT_OWNER_IDS", nil),
-		DiscordToken:           strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN")),
-		DiscordOwnerIDs:        envList("DISCORD_OWNER_IDS", nil),
-		BannedUsersFile:        envString("BANNED_USERS_FILE", ".nyande-banned-users.json"),
-		DiscordPrefix:          envString("DISCORD_COMMAND_PREFIX", "!"),
-		DiscordLLMSettingsFile: envString("DISCORD_LLM_SETTINGS_FILE", ".nyande-discord-llm.json"),
-		LLMSettingsFile:        envString("TELEGRAM_LLM_SETTINGS_FILE", ".nyande-telegram-llm.json"),
-		MusicBackend:           envString("DISCORD_MUSIC_BACKEND", "direct"),
-		MusicMaxPlayers:        envInt("MUSIC_MAX_PLAYERS", 1, 1, 10),
-		FFmpegPath:             envString("FFMPEG_PATH", "ffmpeg"),
-		FFprobePath:            envString("FFPROBE_PATH", "ffprobe"),
-		LavalinkAddress:        strings.TrimSpace(os.Getenv("LAVALINK_ADDRESS")),
-		LavalinkPassword:       envString("LAVALINK_PASSWORD", "youshallnotpass"),
-		LavalinkSecure:         envBool("LAVALINK_SECURE", false),
-		APIFYToken:             firstEnv("APIFY_TOKEN", "APIFY_API_TOKEN"),
-		APIFYInstagramActor:    envString("APIFY_INSTAGRAM_ACTOR", "elis~instagram-downloader-api"),
-		DonateURL:              firstEnv("KOFI_URL", "DONATE_URL"),
-		AllowedLinksFile:       envString("ALLOWED_LINKS_FILE", ".nyande-allowed-links.json"),
-		LinkModerationFile:     envString("LINK_MODERATION_FILE", ".nyande-link-moderation.json"),
-		YTDownloadPath:         envString("YTDLP_PATH", "yt-dlp"),
-		YTDownloadCookies:      strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")),
-		YTDownloadBrowser:      strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FROM_BROWSER")),
-		RedditUserAgent:        envString("REDDIT_USER_AGENT", "linux:nyande-bot:1.0"),
-		MaxMediaItems:          envInt("MAX_MEDIA_ITEMS", 50, 1, 100),
-		MaxFileSize:            envInt64("MAX_FILE_SIZE", 50*1024*1024, 1024, 2*1024*1024*1024),
-		RetryAttempts:          envInt("RETRY_ATTEMPTS", 3, 1, 10),
-		RetryDelay:             envDurationSeconds("RETRY_DELAY", 1200*time.Millisecond),
-		AdminCacheTTL:          envDurationSeconds("ADMIN_CACHE_TTL", 60*time.Second),
-		LLMEnabled:             envBool("LLM_ENABLED", false),
-		LLMBaseURL:             strings.TrimRight(envString("LLM_BASE_URL", "https://openrouter.ai/api/v1"), "/"),
-		LLMAPIKey:              strings.TrimSpace(os.Getenv("LLM_API_KEY")),
-		LLMModel:               strings.TrimSpace(os.Getenv("LLM_MODEL")),
-		LLMSystemPrompt:        strings.TrimSpace(os.Getenv("LLM_SYSTEM_PROMPT")),
-		LLMCooldown:            envDurationSeconds("LLM_COOLDOWN_SECONDS", 0),
-		LLMTimeout:             envDurationSeconds("LLM_REQUEST_TIMEOUT_SECONDS", 120*time.Second),
-		LLMMaxTokens:           envInt("LLM_MAX_TOKENS", 2048, 1, 65536),
-		LLMTemperature:         envFloat("LLM_TEMPERATURE", 0.6, 0, 2),
-		LLMMaxHistory:          envInt("LLM_MAX_HISTORY_MESSAGES", 8, 0, 100),
-		LLMHistoryFile:         envString("LLM_HISTORY_FILE", ".nyande-llm-history.json"),
-		LLMTriggerWords:        envList("LLM_TRIGGER_WORDS", []string{"мяу"}),
-		LLMMemoryEnabled:       envBool("LLM_MEMORY_ENABLED", true),
-		LLMMemoryFile:          envString("LLM_MEMORY_FILE", ".nyande-memory.db"),
-		LLMMemoryMax:           envInt("LLM_MEMORY_MAX_PER_USER", 100, 1, 1000),
-		LLMMemoryRecall:        envInt("LLM_MEMORY_RECALL_LIMIT", 5, 1, 20),
-		LLMWebSearch:           envBool("LLM_WEB_SEARCH_ENABLED", false),
-		LLMWebSearchResults:    envInt("LLM_WEB_SEARCH_MAX_RESULTS", 5, 1, 10),
-		LLMTimezone:            firstNonEmpty(os.Getenv("LLM_TIMEZONE"), os.Getenv("LLM_TIMEZONE_OFFSET"), "Asia/Almaty"),
-		LLMVision:              envBool("LLM_VISION_ENABLED", true),
-		LLMVideoFrames:         envInt("LLM_VIDEO_FRAME_COUNT", 3, 1, 6),
-		StickerPythonPath:      envString("STICKER_PYTHON_PATH", "python3"),
-		WhisperEnabled:         envBool("WHISPER_ENABLED", false),
-		WhisperPath:            envString("WHISPER_PATH", "whisper"),
-		WhisperModel:           envString("WHISPER_MODEL_SIZE", "base"),
-		WhisperLanguage:        envString("WHISPER_LANGUAGE", "auto"),
-		ChatLogEnabled:         envBool("CHAT_LOG_ENABLED", true),
-		ChatLogFile:            envString("CHAT_LOG_FILE", ".nyande-chatlog.db"),
-		ChatLogMaxPerChat:      envInt("CHAT_LOG_MAX_PER_CHAT", 50000, 100, 1000000),
-		ReminderDBFile:         envString("REMINDER_DB_FILE", ".nyande-reminders.db"),
-		QuoteDBFile:            envString("QUOTE_DB_FILE", ".nyande-quotes.db"),
+		BotToken:            firstEnv("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
+		BotOwnerIDs:         envList("BOT_OWNER_IDS", nil),
+		BannedUsersFile:     envString("BANNED_USERS_FILE", ".nyande-banned-users.json"),
+		LLMSettingsFile:     envString("TELEGRAM_LLM_SETTINGS_FILE", ".nyande-telegram-llm.json"),
+		FFmpegPath:          envString("FFMPEG_PATH", "ffmpeg"),
+		FFprobePath:         envString("FFPROBE_PATH", "ffprobe"),
+		APIFYToken:          firstEnv("APIFY_TOKEN", "APIFY_API_TOKEN"),
+		APIFYInstagramActor: envString("APIFY_INSTAGRAM_ACTOR", "elis~instagram-downloader-api"),
+		DonateURL:           firstEnv("KOFI_URL", "DONATE_URL"),
+		AllowedLinksFile:    envString("ALLOWED_LINKS_FILE", ".nyande-allowed-links.json"),
+		LinkModerationFile:  envString("LINK_MODERATION_FILE", ".nyande-link-moderation.json"),
+		YTDownloadPath:      envString("YTDLP_PATH", "yt-dlp"),
+		YTDownloadCookies:   strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")),
+		YTDownloadBrowser:   strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FROM_BROWSER")),
+		RedditUserAgent:     envString("REDDIT_USER_AGENT", "linux:nyande-bot:1.0"),
+		MaxMediaItems:       envInt("MAX_MEDIA_ITEMS", 50, 1, 100),
+		MaxFileSize:         envInt64("MAX_FILE_SIZE", 50*1024*1024, 1024, 2*1024*1024*1024),
+		RetryAttempts:       envInt("RETRY_ATTEMPTS", 3, 1, 10),
+		RetryDelay:          envDurationSeconds("RETRY_DELAY", 1200*time.Millisecond),
+		AdminCacheTTL:       envDurationSeconds("ADMIN_CACHE_TTL", 60*time.Second),
+		LLMEnabled:          envBool("LLM_ENABLED", false),
+		LLMBaseURL:          strings.TrimRight(envString("LLM_BASE_URL", "https://openrouter.ai/api/v1"), "/"),
+		LLMAPIKey:           strings.TrimSpace(os.Getenv("LLM_API_KEY")),
+		LLMModel:            strings.TrimSpace(os.Getenv("LLM_MODEL")),
+		LLMSystemPrompt:     strings.TrimSpace(os.Getenv("LLM_SYSTEM_PROMPT")),
+		LLMCooldown:         envDurationSeconds("LLM_COOLDOWN_SECONDS", 0),
+		LLMTimeout:          envDurationSeconds("LLM_REQUEST_TIMEOUT_SECONDS", 120*time.Second),
+		LLMMaxTokens:        envInt("LLM_MAX_TOKENS", 2048, 1, 65536),
+		LLMTemperature:      envFloat("LLM_TEMPERATURE", 0.6, 0, 2),
+		LLMMaxHistory:       envInt("LLM_MAX_HISTORY_MESSAGES", 8, 0, 100),
+		LLMHistoryFile:      envString("LLM_HISTORY_FILE", ".nyande-llm-history.json"),
+		LLMTriggerWords:     envList("LLM_TRIGGER_WORDS", []string{"мяу"}),
+		LLMMemoryEnabled:    envBool("LLM_MEMORY_ENABLED", true),
+		LLMMemoryFile:       envString("LLM_MEMORY_FILE", ".nyande-memory.db"),
+		LLMMemoryMax:        envInt("LLM_MEMORY_MAX_PER_USER", 100, 1, 1000),
+		LLMMemoryRecall:     envInt("LLM_MEMORY_RECALL_LIMIT", 5, 1, 20),
+		LLMWebSearch:        envBool("LLM_WEB_SEARCH_ENABLED", false),
+		LLMWebSearchResults: envInt("LLM_WEB_SEARCH_MAX_RESULTS", 5, 1, 10),
+		LLMTimezone:         firstNonEmpty(os.Getenv("LLM_TIMEZONE"), os.Getenv("LLM_TIMEZONE_OFFSET"), "Asia/Almaty"),
+		LLMVision:           envBool("LLM_VISION_ENABLED", true),
+		LLMVideoFrames:      envInt("LLM_VIDEO_FRAME_COUNT", 3, 1, 6),
+		StickerPythonPath:   envString("STICKER_PYTHON_PATH", "python3"),
+		WhisperEnabled:      envBool("WHISPER_ENABLED", false),
+		WhisperPath:         envString("WHISPER_PATH", "whisper"),
+		WhisperModel:        envString("WHISPER_MODEL_SIZE", "base"),
+		WhisperLanguage:     envString("WHISPER_LANGUAGE", "auto"),
+		ChatLogEnabled:      envBool("CHAT_LOG_ENABLED", true),
+		ChatLogFile:         envString("CHAT_LOG_FILE", ".nyande-chatlog.db"),
+		ChatLogMaxPerChat:   envInt("CHAT_LOG_MAX_PER_CHAT", 50000, 100, 1000000),
+		ReminderDBFile:      envString("REMINDER_DB_FILE", ".nyande-reminders.db"),
+		QuoteDBFile:         envString("QUOTE_DB_FILE", ".nyande-quotes.db"),
 
 		VideoCompressionEnabled: envBool("VIDEO_COMPRESSION_ENABLED", true),
 		VideoMaxSourceSize:      envInt64("VIDEO_MAX_SOURCE_SIZE", 300*1024*1024, 1024, 2*1024*1024*1024),
 		VideoCompressionTimeout: envPositiveDurationSeconds("VIDEO_COMPRESSION_TIMEOUT_SECONDS", 5*time.Minute),
 		VideoMaxDuration:        envPositiveDurationSeconds("VIDEO_MAX_DURATION_SECONDS", 10*time.Minute),
 	}
-	if cfg.BotToken == "" && cfg.DiscordToken == "" {
-		return Config{}, errors.New(resources.Get("config.error.bot_token_or_discord_bot_token_is_required"))
+	if cfg.BotToken == "" {
+		return Config{}, errors.New(resources.Get("config.error.bot_token_is_required"))
 	}
 	if cfg.LLMEnabled && (cfg.LLMAPIKey == "" || cfg.LLMModel == "") {
 		return Config{}, errors.New(resources.Get("config.error.llm_enabled_requires_llm_api_key_and_llm_model"))
 	}
-	for name, ids := range map[string][]string{"BOT_OWNER_IDS": cfg.BotOwnerIDs, "DISCORD_OWNER_IDS": cfg.DiscordOwnerIDs} {
-		for _, id := range ids {
-			if _, err := access.ParseUserID(id); err != nil {
-				return Config{}, fmt.Errorf("%s: %w", name, err)
-			}
+	for _, id := range cfg.BotOwnerIDs {
+		if _, err := access.ParseUserID(id); err != nil {
+			return Config{}, fmt.Errorf("BOT_OWNER_IDS: %w", err)
 		}
 	}
 	if path := strings.TrimSpace(os.Getenv("DATA_ENCRYPTION_KEY_FILE")); path != "" {
@@ -302,7 +282,7 @@ func envInt64(name string, fallback, minimum, maximum int64) int64 {
 
 func envFloat(name string, fallback, minimum, maximum float64) float64 {
 	value, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(name)), 64)
-	if err != nil || value < minimum || value > maximum {
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < minimum || value > maximum {
 		return fallback
 	}
 	return value
@@ -314,10 +294,11 @@ func envDurationSeconds(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil || value < 0 {
+	nanoseconds := value * float64(time.Second)
+	if err != nil || math.IsNaN(nanoseconds) || nanoseconds < 0 || nanoseconds >= float64(time.Duration(1<<63-1)) {
 		return fallback
 	}
-	return time.Duration(value * float64(time.Second))
+	return time.Duration(nanoseconds)
 }
 
 func envPositiveDurationSeconds(name string, fallback time.Duration) time.Duration {
@@ -330,5 +311,5 @@ func envPositiveDurationSeconds(name string, fallback time.Duration) time.Durati
 }
 
 func (c Config) String() string {
-	return fmt.Sprintf(resources.Get("config.log.summary"), c.BotToken != "", c.DiscordToken != "", c.LLMEnabled, c.LLMModel, c.LLMMemoryEnabled, c.ChatLogEnabled, c.LLMWebSearch, c.LLMVision, c.WhisperEnabled)
+	return fmt.Sprintf(resources.Get("config.log.summary"), c.BotToken != "", c.LLMEnabled, c.LLMModel, c.LLMMemoryEnabled, c.ChatLogEnabled, c.LLMWebSearch, c.LLMVision, c.WhisperEnabled)
 }

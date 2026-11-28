@@ -48,6 +48,7 @@ func (b *Bot) convertMediaToAudio(ctx context.Context, data []byte, name string)
 	output := filepath.Join(tempDir, "audio.mp3")
 	cmd := exec.CommandContext(execCtx, firstString(b.cfg.FFmpegPath, "ffmpeg"),
 		"-hide_banner", "-loglevel", "error", "-nostdin",
+		"-protocol_whitelist", "file,pipe", "-format_whitelist", mediaInputFormats,
 		"-i", input, "-map", "0:a:0", "-vn",
 		"-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
 		"-fs", fmt.Sprint(limit+1), "-y", output,

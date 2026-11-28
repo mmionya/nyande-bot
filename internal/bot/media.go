@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"mime"
 	"os"
 	"os/exec"
@@ -34,7 +35,9 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 	started := time.Now()
 	log.Printf(resources.Get("telegram.log.download_started"), message.Chat.ID, userID(message), message.MessageID, logutil.URL(mediaURL))
 	b.state.MediaTotal.Add(1)
-	status, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("downloader.status.downloading"), message.MessageID, nil)
+	smileys := [...]string{":3", "<3", ">:3", ":3c", ";3", "=3", "^w^", "owo", "uwu"}
+	statusFields := map[string]any{"smiley": smileys[rand.IntN(len(smileys))]}
+	status, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Format("downloader.status.downloading", statusFields), message.MessageID, nil)
 	if err != nil {
 		log.Printf(resources.Get("telegram.log.media_status_failed"), message.Chat.ID, message.MessageID, time.Since(started).Milliseconds())
 		return nil, err
@@ -83,7 +86,7 @@ func (b *Bot) downloadAndSendMedia(ctx context.Context, message *telegram.Messag
 	defer lock.Unlock()
 	sendStarted := time.Now()
 	log.Printf(resources.Get("telegram.log.media_send_started"), message.Chat.ID, message.MessageID, len(result.Items))
-	_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID, resources.Get("downloader.status.sending"), nil)
+	_ = b.telegram.EditMessageText(ctx, message.Chat.ID, status.MessageID, resources.Format("downloader.status.sending", statusFields), nil)
 	sent, sendErr := b.sendDownloadedMedia(ctx, message, result)
 	if sendErr != nil {
 		b.state.MediaErrors.Add(1)
@@ -147,7 +150,7 @@ func (b *Bot) sendDownloadedMedia(ctx context.Context, message *telegram.Message
 			upload.Kind = "video"
 			sentMessage, err = b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
 		}
-		if err != nil && upload.Kind != "document" && (!wasAnimation || mediaUploadRejected(err)) {
+		if err != nil && upload.Kind != "document" && mediaUploadRejected(err) {
 			upload.Kind = "document"
 			sentMessage, err = b.telegram.SendUpload(ctx, message.Chat.ID, upload, message.MessageID)
 		}
@@ -272,7 +275,7 @@ func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, a
 			}
 		case "video", "animation", "video_note":
 			if b.cfg.LLMVision {
-				frames, frameErr := extractVideoFrames(ctx, attachment.Data, attachment.Name, b.cfg.LLMVideoFrames)
+				frames, frameErr := b.extractVideoFrames(ctx, attachment.Data, attachment.Name, b.cfg.LLMVideoFrames)
 				if frameErr != nil {
 					log.Printf(resources.Get("telegram.log.video_frames_failed"), frameErr)
 				} else {
@@ -316,7 +319,7 @@ func (b *Bot) handleLLMRequest(ctx context.Context, message *telegram.Message, a
 		if att.Kind == "document" || att.Kind == "sticker" || att.Kind == "sticker_preview" {
 			continue
 		}
-		if spec, err := inspectMedia(ctx, att); err == nil && spec != "" {
+		if spec, err := inspectMedia(ctx, att, b.cfg.FFprobePath); err == nil && spec != "" {
 			mediaSpecs = append(mediaSpecs, spec)
 		}
 	}
@@ -633,11 +636,11 @@ func (b *Bot) typingLoop(ctx context.Context, chatID int64, stop <-chan struct{}
 	}
 }
 
-func extractVideoFrames(ctx context.Context, data []byte, name string, count int) ([]llm.Image, error) {
-	return extractVideoFramesWithFormat(ctx, data, name, count, false)
+func (b *Bot) extractVideoFrames(ctx context.Context, data []byte, name string, count int) ([]llm.Image, error) {
+	return b.extractVideoFramesWithFormat(ctx, data, name, count, false)
 }
 
-func extractVideoFramesWithFormat(ctx context.Context, data []byte, name string, count int, sticker bool) ([]llm.Image, error) {
+func (b *Bot) extractVideoFramesWithFormat(ctx context.Context, data []byte, name string, count int, sticker bool) ([]llm.Image, error) {
 	directory, err := os.MkdirTemp("", "nyande-frames-*")
 	if err != nil {
 		return nil, err
@@ -647,7 +650,7 @@ func extractVideoFramesWithFormat(ctx context.Context, data []byte, name string,
 	if err := os.WriteFile(input, data, 0o600); err != nil {
 		return nil, err
 	}
-	probe := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input)
+	probe := exec.CommandContext(ctx, firstString(b.cfg.FFprobePath, "ffprobe"), "-v", "error", "-protocol_whitelist", "file,pipe", "-format_whitelist", videoInputFormats, "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input)
 	probeOutput, err := probe.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf(resources.Get("telegram.error.ffprobe_failed"), err, strings.TrimSpace(string(probeOutput)))
@@ -668,8 +671,8 @@ func extractVideoFramesWithFormat(ctx context.Context, data []byte, name string,
 		if sticker {
 			arguments = append(arguments, "-c:v", "libvpx-vp9")
 		}
-		arguments = append(arguments, "-i", input, "-frames:v", "1", "-vf", `scale=min(1280\,iw):-2`, "-q:v", "3", "-y", output)
-		command := exec.CommandContext(ctx, "ffmpeg", arguments...)
+		arguments = append(arguments, "-protocol_whitelist", "file,pipe", "-format_whitelist", videoInputFormats, "-i", input, "-frames:v", "1", "-vf", `scale=min(1280\,iw):-2`, "-q:v", "3", "-y", output)
+		command := exec.CommandContext(ctx, firstString(b.cfg.FFmpegPath, "ffmpeg"), arguments...)
 		commandOutput, commandErr := command.CombinedOutput()
 		if commandErr != nil {
 			log.Printf(resources.Get("telegram.log.frame_failed"), index, commandErr, strings.TrimSpace(string(commandOutput)))
@@ -686,7 +689,7 @@ func extractVideoFramesWithFormat(ctx context.Context, data []byte, name string,
 	return frames, nil
 }
 
-func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, video bool) (string, error) {
+func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, _ bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	directory, err := os.MkdirTemp("", "nyande-whisper-*")
@@ -698,13 +701,27 @@ func (b *Bot) transcribe(ctx context.Context, attachment cachedAttachment, video
 	if err := os.WriteFile(input, attachment.Data, 0o600); err != nil {
 		return "", err
 	}
-	if video {
+	// Normalize every input before Whisper: its own decoder must never receive
+	// an untrusted playlist masquerading as an audio attachment.
+	{
+		const maxAudioBytes = 100 << 20
 		audio := filepath.Join(directory, "audio.wav")
-		command := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
-			"-i", input, "-vn", "-ac", "1", "-ar", "16000", "-y", audio)
+		command := exec.CommandContext(ctx, firstString(b.cfg.FFmpegPath, "ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin",
+			"-protocol_whitelist", "file,pipe", "-format_whitelist", mediaInputFormats,
+			"-i", input, "-vn", "-ac", "1", "-ar", "16000", "-fs", strconv.Itoa(maxAudioBytes+1), "-y", audio)
 		output, err := command.CombinedOutput()
 		if err != nil {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
 			return "", fmt.Errorf(resources.Get("telegram.error.audio_extraction"), err, strings.TrimSpace(string(output)))
+		}
+		info, err := os.Stat(audio)
+		if err != nil {
+			return "", err
+		}
+		if info.Size() > maxAudioBytes {
+			return "", errors.New("normalized audio exceeds 100 MiB")
 		}
 		input = audio
 	}

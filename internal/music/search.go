@@ -1,4 +1,4 @@
-// Package music shares track discovery between Telegram and Discord.
+// Package music discovers tracks for Telegram search and downloads.
 package music
 
 import (
@@ -23,7 +23,7 @@ type Track struct {
 	Live                                       bool
 }
 
-// Keep Python music extraction serialized across both chat transports.
+// Keep Python music extraction serialized across searches and downloads.
 var extractionGate = make(chan struct{}, 1)
 
 func Acquire(ctx context.Context) (func(), error) {

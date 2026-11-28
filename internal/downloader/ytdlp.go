@@ -194,7 +194,10 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, f
 			if err != nil {
 				return Result{}, err
 			}
-			items = append(items, item)
+			items, err = d.appendMedia(items, item)
+			if err != nil {
+				return Result{}, err
+			}
 			if len(items) >= d.cfg.MaxMediaItems {
 				break
 			}
@@ -217,7 +220,10 @@ func (d *Downloader) downloadYTDLPAttempt(ctx context.Context, value *url.URL, f
 			}
 			name = strings.TrimSuffix(name, filepath.Ext(name)) + extension
 		}
-		items = append(items, Media{Kind: kind, Name: name, MIME: contentType, Data: data})
+		items, err = d.appendMedia(items, Media{Kind: kind, Name: name, MIME: contentType, Data: data})
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	if len(items) == 0 {
 		if oversizedMedia || ytdlpSizeLimitOutput(string(outputData)) {

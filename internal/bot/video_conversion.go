@@ -35,7 +35,9 @@ func (b *Bot) videoFileLimit() int64 {
 
 // Restrict input demuxers as well as protocols: downloaded bytes must never
 // cause ffprobe/ffmpeg to follow playlist URLs or read playlist file references.
-const videoInputFormats = "mov,matroska,webm,gif,avi,mpegts,mpegvideo,mpeg,ogg,flv,apng"
+const mediaInputFormats = videoInputFormats + ",mp3,wav,aac,flac,aiff,amr,ape,ac3,eac3,wv,au"
+
+const videoInputFormats = "mov,matroska,webm,gif,avi,mpegts,mpegvideo,mpeg,ogg,flv,apng,asf"
 
 func (b *Bot) probeVideo(ctx context.Context, data []byte, name string) (videoProbe, error) {
 	if err := ctx.Err(); err != nil {

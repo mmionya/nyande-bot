@@ -29,12 +29,12 @@ func llmControlTestBot(t *testing.T) (*Bot, *llmControlNetwork) {
 	t.Helper()
 	b := concurrentTestBot()
 	b.identity = telegram.User{ID: 99, Username: "nyande_test_bot"}
-	settings, err := loadLLMChatSettings(filepath.Join(t.TempDir(), "llm.json"))
+	settings, err := loadLLMChatSettings(filepath.Join(privateStorageDir(t), "llm.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	b.llmConfig = settings
-	archive, err := chatlog.Open(filepath.Join(t.TempDir(), "archive.db"), 100, nil)
+	archive, err := chatlog.Open(filepath.Join(privateStorageDir(t), "archive.db"), 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

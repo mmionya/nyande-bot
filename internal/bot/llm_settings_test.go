@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
+
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 )
 
 func TestLLMChatSettingsPersistenceAndIsolation(t *testing.T) {
@@ -25,10 +28,15 @@ func TestLLMChatSettingsPersistenceAndIsolation(t *testing.T) {
 	if !s.Disabled(-10) || s.Disabled(-20) || s.Disabled(10) {
 		t.Fatal("disabling one chat changed another chat")
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("settings file permissions: %v, %v", info, err)
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if info, err := os.Stat(filepath.Dir(path)); err != nil || info.Mode().Perm() != 0o750 {
+	if err := privatefile.Check(file); err != nil {
+		t.Fatalf("settings file permissions: %v", err)
+	}
+	_ = file.Close()
+	if info, err := os.Stat(filepath.Dir(path)); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o750 {
 		t.Fatalf("settings directory permissions: %v, %v", info, err)
 	}
 	s, err = loadLLMChatSettings(path)

@@ -52,14 +52,14 @@ func TestAllowlistPersistsSubdomainRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, added, err := list.Add("example.com"); err != nil || !added {
+	if _, added, err := list.Add(-1, "example.com"); err != nil || !added {
 		t.Fatalf("add failed: added=%v err=%v", added, err)
 	}
 	reloaded, err := loadAllowlist(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reloaded.Allows("https://media.example.com/post") {
+	if !reloaded.Allows(-1, "https://media.example.com/post") {
 		t.Fatal("persisted parent domain should allow a subdomain")
 	}
 }

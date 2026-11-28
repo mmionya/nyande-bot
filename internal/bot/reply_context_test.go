@@ -130,7 +130,7 @@ func TestLLMReplyContextIsRequestOnly(t *testing.T) {
 				_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"Ответ"}}]}`)
 			}))
 			defer server.Close()
-			path := filepath.Join(t.TempDir(), "history.json")
+			path := filepath.Join(privateStorageDir(t), "history.json")
 			cfg := config.Config{LLMEnabled: true, LLMBaseURL: server.URL, LLMModel: "test", LLMTimeout: time.Second, LLMHistoryFile: path, LLMMaxHistory: 8}
 			request := llm.Request{ChatID: 1, UserName: "Илья", Text: "Объясни", ReplyContext: quoted}
 			if withImage {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mmionya/nyande-bot/internal/config"
+	"github.com/mmionya/nyande-bot/internal/publichttp"
 	"github.com/mmionya/nyande-bot/resources"
 )
 
@@ -53,7 +53,8 @@ func New(cfg config.Config) *Downloader {
 	return &Downloader{
 		cfg: cfg,
 		client: &http.Client{
-			Timeout: 45 * time.Second,
+			Timeout:   45 * time.Second,
+			Transport: publichttp.NewDefaultTransport(),
 			CheckRedirect: func(request *http.Request, via []*http.Request) error {
 				if len(via) >= 6 {
 					return errors.New(resources.Get("telegram.error.too_many_redirects"))
@@ -61,7 +62,7 @@ func New(cfg config.Config) *Downloader {
 				if request.URL.Scheme != "https" && request.URL.Scheme != "http" {
 					return errors.New(resources.Get("downloader.error.redirected_to_unsupported_url_scheme"))
 				}
-				return nil
+				return publichttp.ValidateTarget(request.URL)
 			},
 		},
 	}
@@ -385,28 +386,11 @@ func filenameFromURL(value *url.URL, contentType string) string {
 }
 
 func isPublicURL(ctx context.Context, value *url.URL) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	host := value.Hostname()
-	if host == "localhost" || strings.HasSuffix(host, ".local") {
-		return false
-	}
-	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil || len(addresses) == 0 {
-		return false
-	}
-	for _, address := range addresses {
-		ip := address.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return false
-		}
-	}
-	return true
+	return publichttp.ValidateURL(ctx, value) == nil
 }
 
 func retryable(err error) bool {
-	if err == nil || errors.Is(err, ErrVideoCompression) {
+	if err == nil || terminalDownloadError(err) {
 		return false
 	}
 	text := strings.ReplaceAll(strings.ToLower(err.Error()), "http error ", "http ")

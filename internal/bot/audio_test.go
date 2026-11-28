@@ -183,7 +183,7 @@ func TestAudioConversionRejectsInvalidAndCanceledInput(t *testing.T) {
 	if data, err := b.convertMediaToAudio(context.Background(), []byte("invalid media"), "bad.mp4"); err == nil || len(data) != 0 {
 		t.Fatalf("invalid input returned %d bytes and %v", len(data), err)
 	}
-	silentVideo, err := convertVideoToGIF(context.Background(), gifTestVideo(t), "clip.mp4")
+	silentVideo, err := convertVideoToGIF(context.Background(), gifTestVideo(t), "clip.mp4", "")
 	if err != nil {
 		t.Fatal(err)
 	}

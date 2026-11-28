@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 	"github.com/mmionya/nyande-bot/internal/storagecrypt"
 	"github.com/mmionya/nyande-bot/resources"
 )
@@ -101,15 +102,10 @@ func (c *Client) persistHistoryLocked() error {
 		data = append([]byte(encryptedHistoryPrefix), cipher.Seal(data, []byte(encryptedHistoryPrefix+filepath.Base(path)))...)
 	}
 	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := privatefile.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	parent, err := os.Open(directory)
-	if err != nil {
-		return err
-	}
-	defer parent.Close()
-	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
+	temporary, err := privatefile.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -124,8 +120,5 @@ func (c *Client) persistHistoryLocked() error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary.Name(), path); err != nil {
-		return err
-	}
-	return parent.Sync()
+	return privatefile.Replace(temporary.Name(), path)
 }

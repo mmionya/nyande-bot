@@ -51,6 +51,7 @@ func compressionFixture(t *testing.T, probe, encode string) (*Downloader, string
 }
 
 func TestCompressVideoRetriesOvershootWithoutTruncationAndCleansOutput(t *testing.T) {
+	requirePOSIXFixture(t)
 	d, input, encoder := compressionFixture(t, validCompressionProbe, `
 if [ -f "$0.once" ]; then
     head -c 900000 /dev/zero > "$output"
@@ -95,7 +96,7 @@ fi
 				bitrates = append(bitrates, bitrate)
 			}
 		}
-		if threadCount != 2 || !strings.Contains(call, "-protocol_whitelist\nfile,pipe\n") || !strings.Contains(call, "-c:v\nlibx264\n") || !strings.Contains(call, "-c:a\naac\n") {
+		if threadCount != 2 || !strings.Contains(call, "-protocol_whitelist\nfile,pipe\n") || !strings.Contains(call, "-format_whitelist\n"+compressionInputFormats+"\n") || !strings.Contains(call, "-c:v\nlibx264\n") || !strings.Contains(call, "-c:a\naac\n") {
 			t.Fatalf("missing bounded, compatible encoding options: %s", call)
 		}
 	}
@@ -135,6 +136,9 @@ func TestCompressVideoRejectsUnsafeInputsBeforeEncoding(t *testing.T) {
 		{"oversized probe output", strings.Repeat(" ", 64*1024) + validCompressionProbe, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.name != "source too large" && test.name != "disabled" {
+				requirePOSIXFixture(t)
+			}
 			d, input, encoder := compressionFixture(t, test.probe, "exit 1\n")
 			if test.configure != nil {
 				test.configure(d)
@@ -151,6 +155,7 @@ func TestCompressVideoRejectsUnsafeInputsBeforeEncoding(t *testing.T) {
 }
 
 func TestCompressVideoFailureHasBoundedPrivateDiagnostics(t *testing.T) {
+	requirePOSIXFixture(t)
 	d, input, encoder := compressionFixture(t, validCompressionProbe, `
 printf 'private diagnostic: /secret/path' >&2
 head -c 100000 /dev/zero >&2
@@ -174,6 +179,7 @@ exit 2
 }
 
 func TestCompressVideoStopsAfterTwoOversizedEncodes(t *testing.T) {
+	requirePOSIXFixture(t)
 	d, input, encoder := compressionFixture(t, validCompressionProbe, "head -c 1200000 /dev/zero > \"$output\"\n")
 	_, err := d.compressVideo(context.Background(), input, "clip.mov")
 	if !errors.Is(err, ErrVideoCompression) {
@@ -207,6 +213,7 @@ func TestCompressVideoQueueIsCancellableAndTimeoutIncludesQueue(t *testing.T) {
 }
 
 func TestCompressVideoCancelsRunningEncoderAndReleasesSlot(t *testing.T) {
+	requirePOSIXFixture(t)
 	d, input, encoder := compressionFixture(t, validCompressionProbe, "exec sleep 30\n")
 	d.cfg.VideoCompressionTimeout = 80 * time.Millisecond
 	start := time.Now()
@@ -250,6 +257,19 @@ func TestCompressVideoRealFFmpegPreservesDurationAndAudio(t *testing.T) {
 	}
 	d := New(config.Config{VideoCompressionEnabled: true, MaxFileSize: maxSize,
 		VideoCompressionTimeout: 20 * time.Second, FFmpegPath: ffmpeg, FFprobePath: ffprobe})
+	t.Run("reject playlists disguised as video", func(t *testing.T) {
+		playlist := filepath.Join(directory, "playlist.mp4")
+		if err := os.WriteFile(playlist, []byte("ffconcat version 1.0\nfile source.mkv\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.probeCompressionVideo(ctx, playlist); err == nil {
+			t.Fatal("probe followed a local file reference from an untrusted playlist")
+		}
+		video := compressionVideoInfo{duration: 2, videoIndex: 0, hasAudio: true}
+		if err := d.encodeCompressedVideo(ctx, playlist, filepath.Join(directory, "playlist-output.mp4"), video, 400000, 64000); err == nil {
+			t.Fatal("encoder followed a local file reference from an untrusted playlist")
+		}
+	})
 	item, err := d.compressVideo(ctx, input, "source.mkv")
 	if err != nil {
 		t.Fatal(err)

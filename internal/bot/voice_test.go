@@ -17,31 +17,7 @@ import (
 
 func fakeWhisper(t *testing.T, transcript string, fail bool) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "whisper")
-	script := `#!/bin/sh
-set -eu
-printf '%s\n' "$@" > "$0.args"
-input="$1"
-shift
-out=''
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = '--output_dir' ]; then out="$2"; fi
-  shift 2
-done
-cp "$input" "$0.input"
-`
-	if fail {
-		script += "echo 'private recognized speech' >&2\nexit 1\n"
-	} else {
-		if err := os.WriteFile(path+".transcript", []byte(transcript), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		script += "cp \"$0.transcript\" \"$out/input.txt\"\n"
-	}
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return fakeMediaProcess(t, mediaProcessFixture{Kind: "whisper", Text: transcript, Fail: fail})
 }
 
 func TestVoiceTranscriptionArgumentsAndFailures(t *testing.T) {
@@ -55,6 +31,7 @@ func TestVoiceTranscriptionArgumentsAndFailures(t *testing.T) {
 				text = " \n "
 			}
 			b.cfg.WhisperPath = fakeWhisper(t, text, mode == "failed")
+			b.cfg.FFmpegPath = fakeMediaProcess(t, mediaProcessFixture{Kind: "normalizer"})
 			if mode == "missing" {
 				b.cfg.WhisperPath = filepath.Join(t.TempDir(), "missing-whisper")
 			}
@@ -83,8 +60,12 @@ func TestVoiceTranscriptionArgumentsAndFailures(t *testing.T) {
 				}
 			}
 			data, _ := os.ReadFile(b.cfg.WhisperPath + ".input")
-			if string(data) != "voice bytes" {
-				t.Fatal("voice bytes not passed to Whisper")
+			if string(data) != "normalized:voice bytes" {
+				t.Fatal("Whisper did not receive the normalized audio")
+			}
+			normalizerArgs, err := os.ReadFile(b.cfg.FFmpegPath + ".args")
+			if err != nil || !strings.Contains(string(normalizerArgs), "-protocol_whitelist\nfile,pipe\n") || !strings.Contains(string(normalizerArgs), "-format_whitelist\n") {
+				t.Fatalf("normalization did not restrict media input: %s, %v", normalizerArgs, err)
 			}
 		})
 	}
@@ -102,6 +83,7 @@ func TestTelegramVoiceMessages(t *testing.T) {
 				transcript = ""
 			}
 			b.cfg.WhisperPath = fakeWhisper(t, transcript, mode == "failed")
+			b.cfg.FFmpegPath = fakeMediaProcess(t, mediaProcessFixture{Kind: "normalizer"})
 			message := &telegram.Message{MessageID: 1, Chat: telegram.Chat{ID: 1, Type: "private"}, Voice: &telegram.Voice{FileID: "voice"}}
 			if mode == "reply" {
 				message = &telegram.Message{MessageID: 2, Chat: message.Chat, Text: "Ответь на голосовое", ReplyToMessage: message}

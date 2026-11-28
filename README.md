@@ -2,8 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-`nyande-bot` is a Telegram and Discord media downloader with an optional
-LLM assistant on both platforms.
+`nyande-bot` is a Telegram media downloader with an optional LLM assistant.
 
 ## Features
 
@@ -11,21 +10,25 @@ LLM assistant on both platforms.
   Xiaohongshu (RedNote), Pinterest, YouTube, and Reddit;
 - includes the source post caption or description for every supported platform;
 - supports direct image and video links;
-- sends carousels as Telegram albums or Discord attachment batches of up to 10
-  files and validates file-size limits;
+- sends carousels as Telegram albums of up to 10 files and validates file-size limits;
 - compresses oversized downloaded videos when possible;
 - works with OpenRouter and other OpenAI-compatible APIs;
 - sends photos, selected video frames, and audio/video transcripts to the LLM;
 - reads Telegram stickers, including their visible lettering, and answers voice messages;
-- restores the entire cached album when a user replies to one of the files
-  previously sent by the bot;
+- analyzes the selected attachment when a user replies to a file previously sent
+  by the bot, including a single file selected from an album;
 - provides the LLM with `current_time` and optional `web_search` tools;
-- lets the LLM add emoji reactions to messages in Telegram and Discord;
+- lets the LLM add emoji reactions to messages in Telegram;
 - optionally deletes unsupported links posted by non-administrators in groups;
 - stores extra allowed domains added through `/allowlink example.com`;
 - persists each group's link-deletion setting across restarts;
 - accepts Telegram Stars and can display an optional Ko-fi button;
 - keeps process statistics and separate LLM history for every chat.
+
+Downloaded media stays in memory for up to 30 minutes, with a shared 64 MiB
+cache budget. Files larger than the budget are not retained. Replies to an album
+use only the selected attachment. After eviction, the bot fetches that file from
+Telegram when it is available.
 
 ## Twitter/X text posts and translation in Telegram
 
@@ -90,7 +93,7 @@ to the final card.
 
 ## Technology
 
-- Go 1.26+ — Telegram and Discord bots, downloaders, and LLM client;
+- Go 1.26+ — Telegram bot, downloaders, and LLM client;
 - `yt-dlp`, Deno, FFmpeg, and FFprobe — YouTube challenge solving, media
   processing, and downloader fallbacks;
 - optional OpenAI Whisper CLI — local audio and video transcription;
@@ -99,7 +102,7 @@ to the final card.
 ## Quick start
 
 You need Podman or Docker with a Compose provider, plus a Telegram bot from
-[@BotFather](https://t.me/BotFather), a Discord application, or both.
+[@BotFather](https://t.me/BotFather).
 
 1. Copy the configuration template:
 
@@ -107,11 +110,10 @@ You need Podman or Docker with a Compose provider, plus a Telegram bot from
    cp .env.example .env
    ```
 
-2. Set at least one bot token in `.env`. Both transports can run at once:
+2. Set your Telegram bot token in `.env`:
 
    ```dotenv
    BOT_TOKEN=123456789:telegram_bot_token
-   DISCORD_BOT_TOKEN=your_discord_bot_token
    ```
 
 3. Build and start every service:
@@ -174,28 +176,7 @@ for 30 seconds, and rolls back on startup failure. It prints a command for
 manual rollback under `/var/backups/nyande-bot/` as well. OS dependency packages
 and the isolated sticker environment remain installed after rollback.
 
-## Discord setup
-
-Create an application and bot in the
-[Discord Developer Portal](https://discord.com/developers/applications), copy
-its token to `DISCORD_BOT_TOKEN`, and enable **Message Content Intent** on the
-Bot page.
-Invite it to a server with permission to view channels, send messages, attach
-files, and read message history. The bot processes the first supported media
-link in each message and replies with the downloaded files.
-
-Discord commands use `!` by default: `!help`, `!ping`, `!stats`, `!gif`, and `!reset`. Change the
-prefix with `DISCORD_COMMAND_PREFIX`.
-
-Set `LLM_ENABLED=true`, `LLM_API_KEY`, and `LLM_MODEL` to enable text conversations
-using the same `LLM_*` configuration as Telegram. Discord replies in DMs and,
-on servers, when mentioned, replied to, or invoked with `LLM_TRIGGER_WORDS`.
-Media links and commands take priority. History and cooldown are scoped to each
-channel; `!reset` clears that channel's conversation history. Discord history is
-stored in `LLM_HISTORY_FILE` with `.discord` appended, separately from Telegram.
-Long replies are split into messages. Document reading and LLM reactions are supported on both platforms.
-Photo/video/audio analysis, long-term memory,
-other application tools, moderation, payments, and games remain Telegram features.
+## LLM reply formatting
 
 Telegram LLM replies render double-asterisk bold text, underscore italics,
 strikethrough, links, quotes, inline code, and fenced code blocks with a language.
@@ -213,8 +194,7 @@ Custom and paid reactions are not supported.
 
 Existing LLM triggers, cooldowns and per-chat enable/disable settings still apply;
 this does not start extra LLM requests for every group message. Telegram must allow
-the selected reaction in the chat. In Discord, grant **Read Message History** and
-**Add Reactions**. No extra API key or model is needed.
+the selected reaction in the chat. No extra API key or model is needed.
 
 ## LLM and media analysis
 
@@ -229,15 +209,15 @@ A missing or invalid cover does not prevent the song from being sent.
 
 `/play title` sends the first result; `/play https://…` accepts a supported track
 link, and `/play 2` sends the second result from your latest search in this chat.
-The same source prefixes as Discord work: `yt:`, `ytm:`, `sc:` and `bc:`.
+Source prefixes are `yt:`, `ytm:`, `sc:` and `bc:`.
 For example: `/search sc: ambient`. Search buttons belong to their requester
 and expire after ten minutes.
 
 This uses the existing `YTDLP_PATH`, cookie settings and `FFMPEG_PATH`; it works
 with the LLM and Whisper disabled. Individual tracks must be at most 30 minutes;
 live streams are excluded. MP3 uploads respect `MAX_FILE_SIZE` and Telegram's
-50 MiB cap. Music extraction is serialized across Telegram and Discord, and
-temporary files are removed after downloading or failure.
+50 MiB cap. Music searches and downloads share one extraction slot; temporary
+files are removed after downloading or failure.
 
 ### Telegram stickers and voice messages
 
@@ -274,9 +254,9 @@ Whisper model if it is not cached.
 
 ### Documents
 
-Telegram and Discord accept **PDF, DOCX, PPTX, XLSX, ODT, ODS, ODP and ODF**
+Telegram accepts **PDF, DOCX, PPTX, XLSX, ODT, ODS, ODP and ODF**
 attachments, with a caption or a question replying to the document. In DMs, a
-document without a caption gets a brief summary. Group/server trigger rules still
+document without a caption gets a brief summary. Group trigger rules still
 apply. The current message's attachments take precedence over replied attachments.
 
 The model receives extracted text, including tables, sheet names and slide
@@ -286,8 +266,8 @@ PDF pages are rendered to images so the model can see embedded pictures, diagram
 and scans. The configured model must accept image input; a separate vision model
 is not required. With vision disabled, only the text layer is available.
 
-Limits: 20 MiB per file (or a lower `MAX_FILE_SIZE`), 4 documents per Discord
-message, 40,000 extracted characters per document and 80,000 per request. Up to
+Limits: 20 MiB per file (or a lower `MAX_FILE_SIZE`), 40,000 extracted characters
+per document and 80,000 per request. Up to
 6 pictures or the first 6 PDF pages per document are sent, with 12 images total
 per request, resized to at most 1600 pixels on the longest side. The model is told
 when text or images are omitted. Office vector drawings/charts and SVG/EMF/WMF
@@ -379,9 +359,10 @@ messages (normally capped at `CHAT_LOG_MAX_PER_CHAT`) instead of keeping a
 plaintext full-text index, so very large archives may take longer to search.
 
 Set `DATA_ENCRYPTION_KEY_FILE` to a separately stored, random **32-byte binary key**
-to enable AES-256-GCM encryption of archive content and LLM conversation history
-(including Discord's separate history). The key must have owner-only permissions
-such as `0600`. It is never generated or replaced automatically. Keep a protected
+to enable AES-256-GCM encryption of archive content and LLM conversation history.
+On Unix, the key must have owner-only permissions (`0600` or `0400`). On Windows,
+its ACL must grant access only to the bot account, SYSTEM, and Administrators.
+It is never generated or replaced automatically. Keep a protected
 backup of the key separately from database backups: losing it makes the encrypted
 data unreadable.
 
@@ -391,8 +372,15 @@ remain SQLite metadata. The old plaintext search index is removed and SQLite is
 compacted. History files keep their names but contain encrypted binary data;
 preserve their basenames when restoring backups. Missing or incorrect keys and
 damaged encrypted records are rejected rather than overwritten with empty data.
-Use private data directories (`0700`) and owner-only data files (`0600`). Existing
-plaintext backups need separate encryption or removal; migration cannot erase
+On Unix, use private data directories (`0700`) and owner-only data files (`0600`).
+On Windows, newly created archive/history files and directories receive a protected
+ACL for the bot account, SYSTEM, and Administrators. Existing data directories are
+checked; their ACLs are never changed automatically. If the working directory is
+shared, set `CHAT_LOG_FILE=.nyande-data/chatlog.db` and
+`LLM_HISTORY_FILE=.nyande-data/llm-history.json` and let the bot create the new
+`.nyande-data` directory on first start. This does not change the working
+directory permissions. History replacement flushes the new file before publishing
+it on both platforms. Existing plaintext backups need separate encryption or removal; migration cannot erase
 copies in external snapshots or previously freed disk blocks.
 
 This option covers the message archive and short LLM history. Long-term facts,
@@ -453,26 +441,29 @@ journalctl -u nyande-bot -f | rg '\[moderation\]|update .* failed'
 ```
 
 
+### Allowed-domain scope and migration
+
+`/allowlink example.com` applies only to the current chat. In groups it requires
+administrator permission; a private-chat exception does not change any group.
+After upgrading, old global entries in `ALLOWED_LINKS_FILE` remain stored but no
+longer grant access. The startup log reports this migration. Add each required
+domain again with `/allowlink` in the chat where it should be allowed.
+
 ## Blocking access to the bot
 
-Set numeric owner IDs in `.env`: `BOT_OWNER_IDS=123456789` for Telegram and
-`DISCORD_OWNER_IDS=123456789012345678` for Discord. Separate multiple IDs with
-commas and restart after configuration changes. Only these owners can manage
-global bans; group/server administrator permissions do not grant this ability.
+Set numeric Telegram owner IDs in `.env`: `BOT_OWNER_IDS=123456789`. Separate
+multiple IDs with commas and restart after configuration changes. Only these
+owners can manage global bans; group administrator permissions do not grant this ability.
 Without configured owners, ban management commands are unavailable.
 
-- Telegram: `/botban 123456789` and `/botunban 123456789`, or reply to a user's
-  message with either command without an ID. Usernames are not supported.
-- Discord: `/botban user:person` and `/botunban user:person`. Prefix commands
-  `!botban` / `!botunban` accept an ID, mention, or reply target; the prefix follows
-  `DISCORD_COMMAND_PREFIX`.
+Use `/botban 123456789` and `/botunban 123456789`, or reply to a user's message
+with either command without an ID. Usernames are not supported.
 
-Bans apply to an account in every chat on its platform, including DMs. New
+Bans apply to an account in every Telegram chat, including DMs. New
 messages cannot invoke commands, media downloads, LLM calls, games or music;
 buttons and forms are blocked too. Telegram rejects new payments and discards
 pending reminders for banned users when they become due. Owners and the bot
-itself cannot be banned. Telegram and Discord accounts are separate identities;
-ban each separately when needed.
+itself cannot be banned.
 
 To prevent identity bypasses, Telegram ignores requests sent as a channel or
 anonymous administrator: use your own account for commands. Link moderation
@@ -482,9 +473,9 @@ ban commands are ignored; use the bot's DM with a numeric target ID. Operations
 already started before a ban may finish. A bot ban does not remove someone from
 a group or hide the bot's shared messages from them.
 
-Bans persist in `BANNED_USERS_FILE` (default `.nyande-banned-users.json`), with
-`.discord` appended for Discord. Compose keeps both files in its persistent
-`/app/data` volume. Failed saves leave access unchanged and never report success;
+Bans persist in `BANNED_USERS_FILE` (default `.nyande-banned-users.json`).
+Compose keeps the file in its persistent `/app/data` volume.
+Failed saves leave access unchanged and never report success;
 an invalid ban file stops startup instead of silently losing the bans.
 
 ## Bot commands
@@ -512,7 +503,7 @@ an invalid ban file stops startup instead of silently losing the bans.
 | `/gif` | convert video into a looping Telegram GIF animation |
 | `/video` | send a GIF, animation or attached video as a regular MP4 video |
 | `/mediainfo` | show technical specs (resolution, FPS, duration, codecs) of photo/video/audio |
-| `/allowlink example.com` | allow a domain in a private chat or as an administrator |
+| `/allowlink example.com` | allow a domain only in this chat; group administrators only |
 | `/linkdelete [on\|off]` | configure unsupported-link deletion for this group |
 | `/permitlinks` / `/revokelinks` | reply to a participant to grant/revoke links in silent mode (administrators only) |
 
@@ -520,13 +511,6 @@ In Telegram, attach media with `/audio` in its caption or reply with `/audio`
 to a video, audio file, voice message, or video note. The bot sends an MP3 file.
 The command uses FFmpeg from `FFMPEG_PATH` and applies `MAX_FILE_SIZE` to both
 the source and the result. URLs are not accepted by this command.
-
-Use `!gif` with an attached video, a supported link, or as a reply to a video
-message. The bot sends a silent GIF at 15 fps and up to 480 pixels wide,
-subject to `MAX_FILE_SIZE`.
-
-Discord provides `!help`, `!ping`, `!stats`, `!gif`, and `!reset` (or the prefix configured in
-`DISCORD_COMMAND_PREFIX`). Media links do not need a command.
 
 ## Local validation
 
@@ -584,8 +568,8 @@ curl -fL --retry 3 https://github.com/Brainicism/bgutil-ytdlp-pot-provider/relea
 ```
 
 If `XDG_CONFIG_HOME` is set, use it instead of `~/.config`.
-yt-dlp discovers the plugin and provider automatically for both media downloads
-and Discord music. No extra daemon or bot settings are needed. Keep plugin and
+yt-dlp discovers the plugin and provider automatically for video and music
+downloads. No extra daemon or bot settings are needed. Keep plugin and
 provider versions matched when updating. Script startup adds latency to token
 generation; upstream offers an HTTP service for higher concurrency. These routes
 do not remove login requirements caused by IP restrictions or private content.
@@ -596,7 +580,7 @@ do not remove login requirements caused by IP restrictions or private content.
 cmd/nyande-bot/     application entry point
 internal/bot/         commands, games, moderation, media, and state
 internal/telegram/    Telegram Bot API client
-internal/discordbot/  Discord gateway, commands, and media replies
+internal/music/       music search and metadata
 internal/downloader/  platform downloaders and yt-dlp fallback
 internal/llm/         OpenAI-compatible client and tools
 resources/            shared strings.json
@@ -698,33 +682,9 @@ failed deliveries, so repeated tool calls do not resend the same file.
 `docker compose logs -f bot` shows `[command]` events (command name, chat, user,
 message and duration), `[media]` events (download source, file type/name/size,
 and delivery outcome), `[tool]` events (LLM tool execution), and `[search]`
-events (local search results). Commands and media are logged for Telegram and
-Discord. Command arguments and tool response contents are not included in these
+events (local search results). Command arguments and tool response contents are not included in these
 events; the download URL field omits credentials, query parameters and fragments.
 `[tool] returned` means the tool returned; actual file delivery is recorded by
 `[media] sent` or `[media] send_failed`.
 
 TikTok requests can use `search_tiktok` when web search is enabled. It keeps only unique individual video URLs, using OpenRouter search citations with a scoped DuckDuckGo fallback. `download_media` can then download and send a selected result. This searches indexed pages; freshness, popularity and download availability are not guaranteed. Hosted search adds an LLM request; no new API keys are required.
-
-Use `!llm off` / `!llm on` to disable or enable the LLM across a Discord server (Manage Server or Administrator permission required), or for your DM conversation. `!llm` shows the status. Media downloads remain available. Settings persist in `DISCORD_LLM_SETTINGS_FILE` across restarts. Commands use `DISCORD_COMMAND_PREFIX`; enabling requires the LLM to be enabled in the bot configuration.
-
-[Discord voice music: commands and setup](docs/discord-music.md).
-
-Discord music UI: `/nyande search` opens a private browser with source selection and multi-select results. `/nyande player` shows playback controls. Pagination, repeat, volume, shuffle and queue reordering are supported. See the [setup guide](docs/discord-music.md).
-
-Music now defaults to direct DisGo + DAVE voice with `yt-dlp` and FFmpeg; Java/Lavalink is not required. `MUSIC_MAX_PLAYERS=1` limits concurrent voice players across all servers. See [native installation and migration](docs/discord-music.md).
-
-
-### Discord command picker
-
-After installing the updated binary and restarting, the bot registers individual
-slash commands with descriptions and typed options. Type `/` and select nyande:
-`/help`, `/ping`, `/stats`, `/reset`, `/llm`, `/gif`, `/search`, `/play`, `/player`,
-`/queue`, `/skip`, `/pause`, `/resume`, `/stop`, `/shuffle`, `/clear`, `/move`,
-`/repeat`, `/volume`. `/llm mode:off` requires Manage Server; no mode shows status.
-`/gif` accepts a `url` or `video` attachment and returns the result privately.
-Existing prefix commands and `/nyande` remain available.
-
-The installation needs `applications.commands` and channel permission to use
-application commands. If the picker is stale, check startup logs for
-`[discord] slash command registration failed` and reopen Discord.

@@ -22,7 +22,7 @@ func TestChatlogToolsNilWhenNoStore(t *testing.T) {
 
 func TestChatlogToolsExecution(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "test-tools.db")
+	path := filepath.Join(privateStorageDir(t), "test-tools.db")
 	store, err := chatlog.Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -106,7 +106,7 @@ func TestChatlogToolsExecution(t *testing.T) {
 
 func TestSaveChatMessageIgnoresEmpty(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "test-empty.db")
+	path := filepath.Join(privateStorageDir(t), "test-empty.db")
 	store, err := chatlog.Open(path, 100, nil)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -132,7 +132,7 @@ func TestSaveChatMessageIgnoresEmpty(t *testing.T) {
 
 func TestEditedMessageRemovesArchivedCaption(t *testing.T) {
 	ctx := context.Background()
-	store, err := chatlog.Open(filepath.Join(t.TempDir(), "archive.db"), 100, nil)
+	store, err := chatlog.Open(filepath.Join(privateStorageDir(t), "archive.db"), 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

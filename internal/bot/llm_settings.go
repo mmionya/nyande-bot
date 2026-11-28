@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 )
 
 // llmChatSettings stores only chats which explicitly disabled the LLM. Chats
@@ -106,7 +108,7 @@ func writeLLMChatSettings(path string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	temporary, err := privatefile.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -121,5 +123,5 @@ func writeLLMChatSettings(path string, data []byte) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporary.Name(), path)
+	return privatefile.Replace(temporary.Name(), path)
 }

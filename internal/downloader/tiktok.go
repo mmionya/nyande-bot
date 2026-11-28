@@ -2,7 +2,6 @@ package downloader
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -58,7 +57,7 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 		return Result{}, fmt.Errorf(resources.Get("downloader.error.tikwm_http"), response.StatusCode)
 	}
 	var payload tikWMResponse
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	if err := decodeLimitedJSON(response.Body, 2*1024*1024, &payload); err != nil {
 		return Result{}, fmt.Errorf(resources.Get("downloader.error.tikwm_invalid_response"), err)
 	}
 	if payload.Code != 0 {
@@ -90,7 +89,10 @@ func (d *Downloader) downloadTikTok(ctx context.Context, value *url.URL) (Result
 		if err != nil {
 			return Result{}, err
 		}
-		items = append(items, item)
+		items, err = d.appendMedia(items, item)
+		if err != nil {
+			return Result{}, err
+		}
 		if len(items) >= d.cfg.MaxMediaItems {
 			break
 		}

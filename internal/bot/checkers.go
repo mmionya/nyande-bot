@@ -28,13 +28,14 @@ type checkerMove struct {
 }
 
 type checkersGame struct {
-	Player1  int64
-	Player2  int64
-	Board    [8][8]string
-	Current  string
-	Selected *checkerPosition
-	Over     bool
-	Winner   string
+	MessageID int
+	Player1   int64
+	Player2   int64
+	Board     [8][8]string
+	Current   string
+	Selected  *checkerPosition
+	Over      bool
+	Winner    string
 }
 
 func newCheckers(player1, player2 int64) *checkersGame {
@@ -221,22 +222,31 @@ func (b *Bot) startCheckers(ctx context.Context, message *telegram.Message) erro
 		return nil
 	}
 	if opponent := challengedUser(message); opponent != nil && opponent.ID != message.From.ID && !opponent.IsBot {
-		b.checkersMu.Lock()
-		b.checkersPending[message.Chat.ID] = [2]int64{message.From.ID, opponent.ID}
-		b.checkersMu.Unlock()
 		text := resources.Format("checkers.challenge", map[string]any{"challenger": message.From.DisplayName(), "opponent": opponent.DisplayName()})
 		markup := map[string]any{"inline_keyboard": [][]map[string]any{{{
 			"text": resources.Get("game.accept"), "callback_data": fmt.Sprintf("chk_accept:%d", opponent.ID),
 		}}}}
-		_, err := b.telegram.SendMessage(ctx, message.Chat.ID, text, message.MessageID, markup)
-		return err
+		sent, err := b.telegram.SendMessage(ctx, message.Chat.ID, text, message.MessageID, markup)
+		if err != nil {
+			return err
+		}
+		b.checkersMu.Lock()
+		b.checkersPending[message.Chat.ID] = gameChallenge{MessageID: sent.MessageID, Players: [2]int64{message.From.ID, opponent.ID}}
+		delete(b.checkers, message.Chat.ID)
+		b.checkersMu.Unlock()
+		return nil
 	}
 	game := newCheckers(message.From.ID, 0)
+	sent, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("checkers.started_bot"), message.MessageID, checkersKeyboard(game))
+	if err != nil {
+		return err
+	}
+	game.MessageID = sent.MessageID
 	b.checkersMu.Lock()
 	b.checkers[message.Chat.ID] = game
+	delete(b.checkersPending, message.Chat.ID)
 	b.checkersMu.Unlock()
-	_, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("checkers.started_bot"), message.MessageID, checkersKeyboard(game))
-	return err
+	return nil
 }
 
 func (b *Bot) handleCheckersCallback(ctx context.Context, callback *telegram.CallbackQuery) error {
@@ -251,15 +261,15 @@ func (b *Bot) handleCheckersCallback(ctx context.Context, callback *telegram.Cal
 		}
 		b.checkersMu.Lock()
 		pending, exists := b.checkersPending[chatID]
-		if exists {
-			delete(b.checkersPending, chatID)
-			b.checkers[chatID] = newCheckers(pending[0], pending[1])
-		}
-		game := b.checkers[chatID]
-		b.checkersMu.Unlock()
-		if !exists || game == nil {
+		if !exists || pending.MessageID != callback.Message.MessageID || pending.Players[1] != callback.From.ID {
+			b.checkersMu.Unlock()
 			return b.telegram.AnswerCallback(ctx, callback.ID, resources.Get("game.challenge.expired"), "", true)
 		}
+		delete(b.checkersPending, chatID)
+		game := newCheckers(pending.Players[0], pending.Players[1])
+		game.MessageID = pending.MessageID
+		b.checkers[chatID] = game
+		b.checkersMu.Unlock()
 		if err := b.telegram.EditMessageText(ctx, chatID, callback.Message.MessageID, resources.Get("checkers.started_players"), checkersKeyboard(game)); err != nil {
 			return err
 		}
@@ -271,7 +281,7 @@ func (b *Bot) handleCheckersCallback(ctx context.Context, callback *telegram.Cal
 
 	b.checkersMu.Lock()
 	game := b.checkers[chatID]
-	if game == nil || game.Over {
+	if game == nil || game.Over || game.MessageID != callback.Message.MessageID {
 		b.checkersMu.Unlock()
 		return b.telegram.AnswerCallback(ctx, callback.ID, resources.Get("checkers.no_game"), "", true)
 	}

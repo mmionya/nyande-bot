@@ -54,16 +54,23 @@ type Bot struct {
 	agentJobs    map[int64]*agentJob
 	agentClosing bool
 	agentWG      sync.WaitGroup
+	lifecycleMu  sync.Mutex
+	runCancel    context.CancelFunc
+	runDone      chan struct{}
+	closing      bool
+	updateWG     sync.WaitGroup
+	closeOnce    sync.Once
+	closeErr     error
 
 	updateLocks     sync.Map
 	adminMu         sync.Mutex
 	adminCache      map[adminKey]adminEntry
 	tttMu           sync.Mutex
 	tttGames        map[int64]*ticTacToeGame
-	tttPending      map[int64][2]int64
+	tttPending      map[int64]gameChallenge
 	checkersMu      sync.Mutex
 	checkers        map[int64]*checkersGame
-	checkersPending map[int64][2]int64
+	checkersPending map[int64]gameChallenge
 	wordleMu        sync.Mutex
 	wordleGames     map[wordleKey]*wordleGame
 }
@@ -135,8 +142,8 @@ func New(cfg config.Config) (*Bot, error) {
 		cfg: cfg, access: users, telegram: telegram.New(cfg.BotToken), downloader: downloader.New(cfg),
 		llm: llm.New(cfg), memories: memories, chatlog: chatlogStore, reminders: remindersStore, state: NewState(), allowlist: allowed, linkConfig: linkConfig, media: newMediaCache(512),
 		adminCache: make(map[adminKey]adminEntry),
-		tttGames:   make(map[int64]*ticTacToeGame), tttPending: make(map[int64][2]int64),
-		checkers: make(map[int64]*checkersGame), checkersPending: make(map[int64][2]int64),
+		tttGames:   make(map[int64]*ticTacToeGame), tttPending: make(map[int64]gameChallenge),
+		checkers: make(map[int64]*checkersGame), checkersPending: make(map[int64]gameChallenge),
 		wordleGames: make(map[wordleKey]*wordleGame),
 		quotes:      quoteStore,
 		llmConfig:   llmConfig,
@@ -144,39 +151,82 @@ func New(cfg config.Config) (*Bot, error) {
 }
 
 func (b *Bot) Close() error {
-	b.agentShutdown()
-	var errs []error
-	if b.quotes != nil {
-		if err := b.quotes.Close(); err != nil {
-			errs = append(errs, err)
+	b.closeOnce.Do(func() {
+		b.lifecycleMu.Lock()
+		b.closing = true
+		if b.runCancel != nil {
+			b.runCancel()
 		}
-	}
-	if b.memories != nil {
-		if err := b.memories.Close(); err != nil {
-			errs = append(errs, err)
+		done := b.runDone
+		b.lifecycleMu.Unlock()
+		b.agentShutdown()
+		if done != nil {
+			<-done
 		}
-	}
-	if b.chatlog != nil {
-		if err := b.chatlog.Close(); err != nil {
-			errs = append(errs, err)
+		b.updateWG.Wait()
+		var errs []error
+		if b.quotes != nil {
+			if err := b.quotes.Close(); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
-	if b.reminders != nil {
-		if err := b.reminders.Close(); err != nil {
-			errs = append(errs, err)
+		if b.memories != nil {
+			if err := b.memories.Close(); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
-	return errors.Join(errs...)
+		if b.chatlog != nil {
+			if err := b.chatlog.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if b.reminders != nil {
+			if err := b.reminders.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		b.closeErr = errors.Join(errs...)
+	})
+	return b.closeErr
 }
 
 func (b *Bot) Run(ctx context.Context) error {
+	b.lifecycleMu.Lock()
+	if b.closing || b.runDone != nil {
+		b.lifecycleMu.Unlock()
+		return errors.New("bot has already been started or closed")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	b.runCancel, b.runDone = cancel, done
+	b.lifecycleMu.Unlock()
+	var workers sync.WaitGroup
+	defer func() {
+		cancel()
+		workers.Wait()
+		close(done)
+	}()
 	identity, err := b.telegram.GetMe(ctx)
 	if err != nil {
 		return fmt.Errorf(resources.Get("telegram.bot.error.identity"), err)
 	}
 	b.identity = identity
 	log.Printf(resources.Get("telegram.log.started"), identity.Username, identity.ID, b.cfg.String())
-	go b.reminderLoop(ctx)
+	workers.Go(func() { b.reminderLoop(ctx) })
+	workers.Go(func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if b.media != nil {
+					b.media.prune()
+				}
+			}
+		}
+	})
 	commands := []map[string]string{
 		{"command": "help", "description": resources.Get("telegram.command.help")},
 		{"command": "agent", "description": resources.Get("telegram.command.agent")},
@@ -236,8 +286,14 @@ func (b *Bot) Run(ctx context.Context) error {
 			if update.UpdateID >= offset {
 				offset = update.UpdateID + 1
 			}
-			semaphore <- struct{}{}
+			select {
+			case semaphore <- struct{}{}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			workers.Add(1)
 			go func(current telegram.Update) {
+				defer workers.Done()
 				defer func() { <-semaphore }()
 				if err := b.HandleUpdate(ctx, current); err != nil {
 					log.Printf(resources.Get("telegram.log.update_failed"), current.UpdateID, err)
@@ -248,6 +304,17 @@ func (b *Bot) Run(ctx context.Context) error {
 }
 
 func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	b.lifecycleMu.Lock()
+	if b.closing {
+		b.lifecycleMu.Unlock()
+		return context.Canceled
+	}
+	b.updateWG.Add(1)
+	b.lifecycleMu.Unlock()
+	defer b.updateWG.Done()
 	var chatID int64
 	var text string
 	switch {
@@ -265,6 +332,9 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 		command, _, ok := parseCommand(text, b.identity.Username)
 		if ok && (command == "agentstatus" || command == "agentstop") {
 			if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
+				return err
+			}
+			if handled, err := b.moderateCommandLinks(ctx, update.Message); handled || err != nil {
 				return err
 			}
 			if b.silentModeration(chatID) {
@@ -301,6 +371,11 @@ func (b *Bot) HandleUpdate(ctx context.Context, update telegram.Update) error {
 		if !lock.TryLock() {
 			if blocked, err := b.rejectBlockedUpdate(ctx, update); blocked {
 				return err
+			}
+			if update.Message != nil {
+				if handled, err := b.moderateCommandLinks(ctx, update.Message); handled || err != nil {
+					return err
+				}
 			}
 			if b.silentModeration(chatID) {
 				return nil
@@ -394,6 +469,9 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 
 	text := strings.TrimSpace(message.ContentText())
 	if strings.HasPrefix(text, "/") {
+		if handled, err := b.moderateCommandLinks(ctx, message); handled || err != nil {
+			return err
+		}
 		command, arguments, ok := parseCommand(text, b.identity.Username)
 		if !ok {
 			return nil
@@ -518,39 +596,8 @@ func parseCommand(text, botUsername string) (string, string, bool) {
 }
 
 func (b *Bot) handleLinks(ctx context.Context, message *telegram.Message, urls []string, download bool) error {
-	if b.silentModeration(message.Chat.ID) {
-		// This Telegram flag identifies posts from the linked discussion channel;
-		// ordinary forwards and comments do not inherit the exemption.
-		if message.IsAutomaticForward {
-			return nil
-		}
-		if message.SenderChat == nil && message.From != nil && b.linkConfig.UserPermitted(message.Chat.ID, message.From.ID) {
-			return nil
-		}
-	}
-	forbidden := false
-	for _, value := range urls {
-		if b.silentModeration(message.Chat.ID) || (!downloader.AllowedHost(value) && !b.allowlist.Allows(value)) {
-			forbidden = true
-			break
-		}
-	}
-	admin := false
-	if forbidden && !message.IsPrivate() {
-		var err error
-		admin, err = b.isAdmin(ctx, message)
-		if err != nil {
-			return fmt.Errorf(resources.Get("telegram.error.link_author_role"), err)
-		}
-	}
-	if forbidden && !message.IsPrivate() && !admin && b.linkDeletionEnabled(message.Chat.ID) {
-		if err := b.telegram.DeleteMessage(ctx, message.Chat.ID, message.MessageID); err != nil {
-			return err
-		}
-		if !b.silentModeration(message.Chat.ID) {
-			_, _ = b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.unsupported"), 0, nil)
-		}
-		return nil
+	if handled, err := b.moderateLinks(ctx, message, urls); handled || err != nil {
+		return err
 	}
 	if !download || b.silentModeration(message.Chat.ID) {
 		return nil
@@ -610,7 +657,7 @@ func (b *Bot) addAllowedLink(ctx context.Context, message *telegram.Message, arg
 		_, err := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.usage"), message.MessageID, nil)
 		return err
 	}
-	domain, added, err := b.allowlist.Add(argument)
+	domain, added, err := b.allowlist.Add(message.Chat.ID, argument)
 	if err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID, resources.Get("links.error.invalid_domain"), message.MessageID, nil)
 		return errors.Join(err, sendErr)

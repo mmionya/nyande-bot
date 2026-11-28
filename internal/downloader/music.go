@@ -76,7 +76,7 @@ func (d *Downloader) SearchMusic(ctx context.Context, query string, limit int) (
 }
 
 // DownloadMusic produces one bounded MP3; temporary downloads and conversion
-// share the extractor gate with Discord so small servers do not run them in parallel.
+// share the extractor gate with searches so small servers do not run them in parallel.
 func (d *Downloader) DownloadMusic(ctx context.Context, track music.Track) (Media, error) {
 	page, err := music.Identifier(track.URL)
 	if err != nil || !strings.HasPrefix(page, "https://") {

@@ -78,7 +78,7 @@ func TestSilentModerationUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := allowed.Add("allowed.example"); err != nil {
+	if _, _, err := allowed.Add(-1, "allowed.example"); err != nil {
 		t.Fatal(err)
 	}
 	b := &Bot{linkConfig: s, allowlist: allowed, telegram: telegram.New("test"), state: NewState(), adminCache: map[adminKey]adminEntry{

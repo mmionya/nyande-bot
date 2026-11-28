@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/mmionya/nyande-bot/internal/privatefile"
 	"github.com/mmionya/nyande-bot/internal/storagecrypt"
 	"github.com/mmionya/nyande-bot/resources"
 	_ "modernc.org/sqlite"
@@ -65,10 +66,10 @@ func Open(path string, maxPerChat int, key []byte) (*Store, error) {
 		maxPerChat = 50000
 	}
 	if path != ":memory:" {
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		if err := privatefile.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, fmt.Errorf(resources.Get("chatlog.error.create_chat_log_directory"), err)
 		}
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		file, err := privatefile.Open(path)
 		if err != nil {
 			return nil, fmt.Errorf(resources.Get("chatlog.error.open_chat_log_file"), err)
 		}
@@ -76,7 +77,7 @@ func Open(path string, maxPerChat int, key []byte) (*Store, error) {
 			return nil, err
 		}
 		for _, suffix := range []string{"", "-wal", "-shm"} {
-			if err := os.Chmod(path+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			if err := privatefile.Protect(path + suffix); err != nil && !os.IsNotExist(err) {
 				return nil, err
 			}
 		}

@@ -6,8 +6,7 @@
 .nyande-link-moderation.json
 .nyande-banned-users.json*
 .nyande-llm-history.json
-.nyande-llm-history.json.discord
-.nyande-llm-history.json.discord.tmp
+.nyande-data/
 
 __pycache__/
 *.py[cod]
@@ -17,5 +16,4 @@ dist/
 
 .nyande-*.db*
 
-.nyande-discord-llm.json*
 .nyande-telegram-llm.json*

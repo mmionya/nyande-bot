@@ -21,6 +21,7 @@ import (
 )
 
 func TestInstagramDownloadsJPEGAtHEICURLs(t *testing.T) {
+	requirePOSIXFixture(t)
 	var photo bytes.Buffer
 	if err := jpeg.Encode(&photo, image.NewRGBA(image.Rect(0, 0, 2, 2)), nil); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,7 @@ exit 1
 }
 
 func TestInstagramExtractorSuccessSkipsFallbackPages(t *testing.T) {
+	requirePOSIXFixture(t)
 	for _, kind := range []string{"p", "reel", "reels", "tv"} {
 		t.Run(kind, func(t *testing.T) {
 			script := filepath.Join(t.TempDir(), "yt-dlp")

@@ -79,7 +79,7 @@ func (b *Bot) readSticker(ctx context.Context, attachment cachedAttachment) ([]l
 	case ".tgs":
 		images, err = renderTGS(renderCtx, attachment.Data, count, b.cfg.StickerPythonPath)
 	case ".webm":
-		images, err = extractVideoFramesWithFormat(renderCtx, attachment.Data, attachment.Name, count, true)
+		images, err = b.extractVideoFramesWithFormat(renderCtx, attachment.Data, attachment.Name, count, true)
 	default:
 		images, err = stickerImage(attachment.Data)
 	}

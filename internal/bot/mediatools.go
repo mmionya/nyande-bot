@@ -41,7 +41,7 @@ type probeOutput struct {
 	} `json:"format"`
 }
 
-func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
+func inspectMedia(ctx context.Context, att cachedAttachment, ffprobePath string) (string, error) {
 	sizeStr := formatFileSize(int64(len(att.Data)))
 
 	if att.Kind == "photo" {
@@ -69,7 +69,7 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", input)
+	cmd := exec.CommandContext(probeCtx, firstString(ffprobePath, "ffprobe"), "-v", "error", "-protocol_whitelist", "file,pipe", "-format_whitelist", mediaInputFormats, "-show_streams", "-show_format", "-of", "json", input)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf(resources.Get("telegram.mediainfo.named_file"), att.Name, att.MIME, sizeStr), nil
@@ -169,7 +169,7 @@ func inspectMedia(ctx context.Context, att cachedAttachment) (string, error) {
 	return fmt.Sprintf(resources.Get("telegram.mediainfo.file"), sizeStr), nil
 }
 
-func convertVideoToRound(ctx context.Context, data []byte, name string) ([]byte, error) {
+func convertVideoToRound(ctx context.Context, data []byte, name, ffmpegPath string) ([]byte, error) {
 	tempDir, err := os.MkdirTemp("", "nyande-round-*")
 	if err != nil {
 		return nil, err
@@ -185,7 +185,8 @@ func convertVideoToRound(ctx context.Context, data []byte, name string) ([]byte,
 	defer cancel()
 
 	output := filepath.Join(tempDir, "round.mp4")
-	cmd := exec.CommandContext(execCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	cmd := exec.CommandContext(execCtx, firstString(ffmpegPath, "ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin",
+		"-protocol_whitelist", "file,pipe", "-format_whitelist", mediaInputFormats,
 		"-i", input,
 		"-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=384:384,fps=30",
 		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
@@ -201,7 +202,7 @@ func convertVideoToRound(ctx context.Context, data []byte, name string) ([]byte,
 	return os.ReadFile(output)
 }
 
-func convertAudioToVoice(ctx context.Context, data []byte, name string) ([]byte, error) {
+func convertAudioToVoice(ctx context.Context, data []byte, name, ffmpegPath string) ([]byte, error) {
 	tempDir, err := os.MkdirTemp("", "nyande-voice-*")
 	if err != nil {
 		return nil, err
@@ -217,7 +218,8 @@ func convertAudioToVoice(ctx context.Context, data []byte, name string) ([]byte,
 	defer cancel()
 
 	output := filepath.Join(tempDir, "voice.ogg")
-	cmd := exec.CommandContext(execCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	cmd := exec.CommandContext(execCtx, firstString(ffmpegPath, "ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin",
+		"-protocol_whitelist", "file,pipe", "-format_whitelist", mediaInputFormats,
 		"-i", input,
 		"-vn",
 		"-c:a", "libopus", "-b:a", "64k", "-ar", "48000",
@@ -230,7 +232,7 @@ func convertAudioToVoice(ctx context.Context, data []byte, name string) ([]byte,
 	return os.ReadFile(output)
 }
 
-func convertVideoToGIF(ctx context.Context, data []byte, name string) ([]byte, error) {
+func convertVideoToGIF(ctx context.Context, data []byte, name, ffmpegPath string) ([]byte, error) {
 	tempDir, err := os.MkdirTemp("", "nyande-gif-*")
 	if err != nil {
 		return nil, err
@@ -246,7 +248,8 @@ func convertVideoToGIF(ctx context.Context, data []byte, name string) ([]byte, e
 	defer cancel()
 
 	output := filepath.Join(tempDir, "animation.mp4")
-	cmd := exec.CommandContext(execCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+	cmd := exec.CommandContext(execCtx, firstString(ffmpegPath, "ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin",
+		"-protocol_whitelist", "file,pipe", "-format_whitelist", mediaInputFormats,
 		"-i", input,
 		"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
 		"-an",
@@ -286,7 +289,7 @@ func (b *Bot) roundCommand(ctx context.Context, message *telegram.Message) error
 		return err
 	}
 
-	roundData, err := convertVideoToRound(ctx, target.Data, target.Name)
+	roundData, err := convertVideoToRound(ctx, target.Data, target.Name, b.cfg.FFmpegPath)
 	if err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
 			fmt.Sprintf(resources.Get("telegram.round.convert_failed"), err),
@@ -328,7 +331,7 @@ func (b *Bot) voiceCommand(ctx context.Context, message *telegram.Message) error
 		return err
 	}
 
-	voiceData, err := convertAudioToVoice(ctx, target.Data, target.Name)
+	voiceData, err := convertAudioToVoice(ctx, target.Data, target.Name, b.cfg.FFmpegPath)
 	if err != nil {
 		_, sendErr := b.telegram.SendMessage(ctx, message.Chat.ID,
 			fmt.Sprintf(resources.Get("telegram.voice.convert_failed"), err),
@@ -378,7 +381,7 @@ func (b *Bot) sendGIF(ctx context.Context, message *telegram.Message, attachment
 		return errors.New(resources.Get("telegram.gif.usage"))
 	}
 
-	gifData, err := convertVideoToGIF(ctx, target.Data, target.Name)
+	gifData, err := convertVideoToGIF(ctx, target.Data, target.Name, b.cfg.FFmpegPath)
 	if err != nil {
 		return fmt.Errorf(resources.Get("telegram.gif.convert_failed"), err)
 	}
@@ -414,7 +417,7 @@ func (b *Bot) mediainfoCommand(ctx context.Context, message *telegram.Message) e
 
 	var results []string
 	for _, att := range attachments {
-		info, err := inspectMedia(ctx, att)
+		info, err := inspectMedia(ctx, att, b.cfg.FFprobePath)
 		if err != nil {
 			info = fmt.Sprintf(resources.Get("telegram.mediainfo.failed"), att.Name, err)
 		}

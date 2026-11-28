@@ -2,7 +2,6 @@ package downloader
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -45,7 +44,7 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 		}
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
 			var payload any
-			if json.NewDecoder(response.Body).Decode(&payload) == nil {
+			if decodeLimitedJSON(response.Body, 10*1024*1024, &payload) == nil {
 				post := redditPostData(payload)
 				if post != nil {
 					caption := redditCaption(post)
@@ -63,7 +62,10 @@ func (d *Downloader) downloadReddit(ctx context.Context, value *url.URL) (Result
 								}
 								continue
 							}
-							items = append(items, item)
+							items, downloadErr = d.appendMedia(items, item)
+							if downloadErr != nil {
+								return Result{}, downloadErr
+							}
 						}
 						if len(items) > 0 {
 							return Result{Items: items, Caption: caption, Source: "reddit"}, nil

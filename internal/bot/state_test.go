@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/mmionya/nyande-bot/internal/telegram"
 )
@@ -38,5 +39,38 @@ func TestAlbumReplySelectsItsOwnAttachment(t *testing.T) {
 		if cache.Has(2, messages[0].MessageID) {
 			t.Fatal("album cache crossed chat boundaries")
 		}
+	}
+}
+
+func TestMediaCacheBoundsBytesAndExpires(t *testing.T) {
+	cache := newMediaCache(3)
+	cache.maxBytes, cache.ttl = 6, time.Minute
+	now := time.Now()
+	cache.now = func() time.Time { return now }
+	put := func(id int, data string) {
+		cache.Put(1, []telegram.Message{{MessageID: id}}, []cachedAttachment{{Data: []byte(data)}})
+	}
+	put(1, "aaa")
+	put(2, "bbb")
+	if len(cache.Get(1, 1)) != 1 {
+		t.Fatal("first file missing")
+	}
+	put(3, "ccc")
+	if !cache.Has(1, 1) || cache.Has(1, 2) || !cache.Has(1, 3) {
+		t.Fatal("byte limit must evict the least recently read attachment")
+	}
+	put(4, "oversized")
+	if cache.Has(1, 4) || !cache.Has(1, 1) || !cache.Has(1, 3) {
+		t.Fatal("oversized attachment must not displace usable cached files")
+	}
+	put(1, "a")
+	put(5, "bb")
+	if !cache.Has(1, 3) || !cache.Has(1, 5) || cache.bytes != 6 {
+		t.Fatal("replacement did not release its previous byte budget")
+	}
+	now = now.Add(time.Minute)
+	cache.prune()
+	if cache.Has(1, 1) || len(cache.Get(1, 3)) != 0 || cache.bytes != 0 {
+		t.Fatal("expired data must be released even without a new insertion")
 	}
 }

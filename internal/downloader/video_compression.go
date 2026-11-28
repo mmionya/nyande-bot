@@ -24,6 +24,10 @@ var ErrVideoCompression = errors.New("video compression failed")
 // Encoding is CPU intensive; share a single slot across all Downloader instances.
 var videoCompressionSlot = make(chan struct{}, 1)
 
+// Downloaded bytes must be a media container, never a playlist that can open
+// other local files. The protocol restriction independently forbids networking.
+const compressionInputFormats = "mov,matroska,webm,gif,avi,mpegts,mpegvideo,mpeg,ogg,flv,apng"
+
 type videoCompressionError struct {
 	message string
 	cause   error
@@ -198,7 +202,7 @@ func (d *Downloader) probeCompressionVideo(ctx context.Context, filename string)
 		probePath = "ffprobe"
 	}
 	command := exec.CommandContext(ctx, probePath, "-v", "error", "-threads", "1",
-		"-protocol_whitelist", "file,pipe", "-show_entries",
+		"-protocol_whitelist", "file,pipe", "-format_whitelist", compressionInputFormats, "-show_entries",
 		"format=duration:stream=index,codec_type,width,height:stream_disposition=attached_pic",
 		"-of", "json", "-i", filename)
 	command.WaitDelay = time.Second
@@ -257,7 +261,7 @@ func (d *Downloader) encodeCompressedVideo(ctx context.Context, input, output st
 	// the aspect ratio, and never enlarge a smaller input.
 	filter := fmt.Sprintf("scale=w='min(%d,iw)':h='min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", width, height)
 	arguments := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-		"-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-i", input,
+		"-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-format_whitelist", compressionInputFormats, "-i", input,
 		"-map", "0:" + strconv.Itoa(video.videoIndex), "-map", "0:a:0?", "-sn", "-dn",
 		"-map_metadata", "-1", "-map_chapters", "-1", "-vf", filter, "-fpsmax", "30",
 		"-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p", "-threads", "1",

@@ -169,7 +169,10 @@ func (d *Downloader) downloadTwitter(ctx context.Context, value *url.URL) (Resul
 		if candidate.Type == "animation" {
 			item.Kind = "animation"
 		}
-		result.Items = append(result.Items, item)
+		result.Items, err = d.appendMedia(result.Items, item)
+		if err != nil {
+			return Result{}, err
+		}
 		if len(result.Items) >= d.cfg.MaxMediaItems {
 			break
 		}
