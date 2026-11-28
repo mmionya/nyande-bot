@@ -111,7 +111,9 @@ func fakeMediaProcess(t *testing.T, fixture mediaProcessFixture) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Link(executable, path); err != nil {
+	// Windows keeps the running test executable locked, including its hard links.
+	// Copy it so the fixture can be removed while the parent test is still running.
+	if runtime.GOOS == "windows" || os.Link(executable, path) != nil {
 		source, err := os.Open(executable)
 		if err != nil {
 			t.Fatal(err)
