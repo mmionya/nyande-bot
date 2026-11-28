@@ -15,6 +15,7 @@ import (
 	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
 )
 
 const statsCardSize = 1080
@@ -60,7 +61,7 @@ func renderStatsCard(stats statsSnapshot) ([]byte, error) {
 	p.text(61, 153, 60, 740, resources.Get("bot.stats.card.title"), c.text)
 	p.text(64, 190, 23, 740, resources.Get("bot.stats.card.period"), c.muted)
 	p.flower(923, 123, 69, 8, c.primary)
-	p.text(886, 142, 47, 80, ":3", c.onPrimary)
+	p.centeredText(923, 123, 47, ":3", c.onPrimary)
 
 	p.rounded(64, 216, 952, 68, 34, c.high)
 	p.icon("clock", 98, 250, c.primary, c.high)
@@ -116,12 +117,6 @@ func renderStatsCard(stats statsSnapshot) ([]byte, error) {
 	p.text(580, 891, 23, 380, resources.Get("bot.stats.card.llm_errors"), c.muted)
 	p.text(580, 946, 43, 408, statsNumber(stats.LLMErrors), c.peach)
 
-	for x := 64; x < 282; x++ {
-		y0 := 1015 + 5*math.Sin(float64(x-64)*math.Pi/26)
-		y1 := 1015 + 5*math.Sin(float64(x+1-64)*math.Pi/26)
-		drawLine(p.canvas, x*2, int(y0*2), (x+1)*2, int(y1*2), c.primary, 6)
-	}
-	p.rightText(1016, 1023, 20, 680, resources.Get("bot.stats.card.footer"), c.muted)
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -233,6 +228,21 @@ func (p *statsPainter) text(x, baseline, size, width int, value string, shade co
 func (p *statsPainter) rightText(right, baseline, size, width int, value string, shade color.RGBA) {
 	if face := p.fit(size, width, value); face != nil {
 		drawText(p.canvas, face, right*2-font.MeasureString(face, value).Ceil(), baseline*2, value, shade)
+	}
+}
+
+func (p *statsPainter) centeredText(x, y, size int, value string, shade color.RGBA) {
+	if face := p.face(size); face != nil {
+		// Center the visible glyphs, including their bearings and baseline offset.
+		bounds, _ := font.BoundString(face, value)
+		drawer := font.Drawer{
+			Dst: p.canvas, Src: image.NewUniform(shade), Face: face,
+			Dot: fixed.Point26_6{
+				X: fixed.I(x*2) - (bounds.Min.X+bounds.Max.X)/2,
+				Y: fixed.I(y*2) - (bounds.Min.Y+bounds.Max.Y)/2,
+			},
+		}
+		drawer.DrawString(value)
 	}
 }
 

@@ -60,7 +60,6 @@
   "bot.stats.card.errors": "Ошибки · {count} ({rate}%)",
   "bot.stats.card.llm_calls": "Вызовы LLM",
   "bot.stats.card.llm_errors": "Ошибки LLM",
-  "bot.stats.card.footer": "Новый запуск — новый отсчёт",
   "bot.stats.card.uptime_days": "{days} д {hours} ч {minutes} мин",
   "bot.stats.card.uptime_hours": "{hours} ч {minutes} мин",
   "bot.stats.card.uptime_minutes": "{minutes} мин {seconds} с",
