@@ -490,7 +490,7 @@ an invalid ban file stops startup instead of silently losing the bans.
 | `/donate` | support the bot through Telegram Stars or Ko-fi |
 | `/paysupport` | show payment support information |
 | `/ping` | check whether the bot is available |
-| `/stats` | show statistics for the current process |
+| `/stats` | show a Material 3 Expressive PNG card with statistics for the current process |
 | `/reset` | clear LLM history for the current chat |
 | `/translate [language] [URL or text]` | translate an X/Twitter post, supplied text or replied message in Telegram |
 | `/remember fact` | save a long-term memory for the current user and chat |

@@ -518,8 +518,7 @@ func (b *Bot) handleMessage(ctx context.Context, message *telegram.Message) (err
 		case "forget_all":
 			return b.forgetAllCommand(ctx, message)
 		case "stats":
-			_, err := b.telegram.SendMessage(ctx, message.Chat.ID, b.statsText(), message.MessageID, nil)
-			return err
+			return b.statsCommand(ctx, message)
 		case "donate":
 			return b.sendDonationMenu(ctx, message)
 		case "paysupport":
@@ -742,23 +741,6 @@ func (b *Bot) handlePreCheckout(ctx context.Context, query *telegram.PreCheckout
 		errorMessage = resources.Get("bot.payment.invalid")
 	}
 	return b.telegram.AnswerPreCheckout(ctx, query.ID, valid, errorMessage)
-}
-
-func (b *Bot) statsText() string {
-	uptime := time.Since(b.state.StartedAt).Round(time.Second)
-	total := b.state.MediaTotal.Load()
-	errorsCount := b.state.MediaErrors.Load()
-	errorRate := float64(0)
-	if total > 0 {
-		errorRate = float64(errorsCount) / float64(total) * 100
-	}
-	return resources.Format("bot.stats", map[string]any{
-		"uptime": uptime, "chats": b.state.UniqueChats(),
-		"messages": b.state.MessagesTotal.Load(), "commands": b.state.CommandsUsed.Load(),
-		"media": total, "success": total - errorsCount, "errors": errorsCount,
-		"error_rate": fmt.Sprintf("%.1f", errorRate),
-		"llm_calls":  b.state.LLMCalls.Load(), "llm_errors": b.state.LLMErrors.Load(),
-	})
 }
 
 func userID(message *telegram.Message) int64 {
