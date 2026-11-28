@@ -43,7 +43,8 @@ func TestTelegramOversizedVideoCompressionDelivery(t *testing.T) {
 			b.cfg.MaxFileSize = 64 * 1024
 			b.cfg.VideoMaxSourceSize = 256 * 1024
 			b.cfg.VideoCompressionEnabled = true
-			b.cfg.VideoCompressionTimeout = 3 * time.Second
+			// Race-instrumented fixture processes each pause briefly during exit.
+			b.cfg.VideoCompressionTimeout = 15 * time.Second
 			b.cfg.VideoMaxDuration = 10 * time.Minute
 			b.cfg.FFprobePath, b.cfg.FFmpegPath = probe, encoder
 			b.cfg.RetryAttempts = 3
@@ -107,7 +108,7 @@ func TestTelegramOversizedVideoCompressionDelivery(t *testing.T) {
 					Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)),
 				}, nil
 			})
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			sent, err := b.downloadAndSendMedia(ctx, message, mediaURL)
 			if len(events) == 0 {
